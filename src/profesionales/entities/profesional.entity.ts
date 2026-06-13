@@ -3,6 +3,7 @@ import { Column, Entity, JoinColumn, ManyToOne, OneToMany, OneToOne, PrimaryGene
 import { ProfServicio } from './prof_servicio.entity';
 import { Horario } from './horario.entity';
 import { Turno } from 'src/turnos/entities/turno.entity';
+import { HorarioDestacado } from './horario-destacado.entity';
 
 @Entity('profesionales')
 export class Profesional {
@@ -22,11 +23,14 @@ export class Profesional {
     @JoinColumn({ name: 'id_usuario' })
     public usuario: Usuario;
 
-    @OneToMany(() => ProfServicio, (profServicio) => profServicio.id_prof_servicio)
+    @OneToMany(() => ProfServicio, (profServicio) => profServicio.profesional)
     public profServicio: ProfServicio[];
 
     @OneToMany(() => Horario, (horario) => horario.profesional)
     public horarios: Horario[];
+
+    @OneToMany(() => HorarioDestacado, (horarioDestacado) => horarioDestacado.profesional)
+    public horariosDestacados: HorarioDestacado[];
 
     @OneToMany(() => Turno, (turno) => turno.profesional)
     public turnos: Turno[];

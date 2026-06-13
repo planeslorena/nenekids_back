@@ -23,6 +23,13 @@ export class Cliente {
     })
     public fecha_nacimiento: string;
 
+    @Column({
+        name: 'observaciones',
+        type: 'text',
+        nullable: true,
+    })
+    public observaciones?: string;
+
     @ManyToOne(() => Usuario, (usuario) => usuario.clientes)
     @JoinColumn({ name: 'id_usuario' })
     public adulto: Usuario;

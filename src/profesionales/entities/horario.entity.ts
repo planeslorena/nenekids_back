@@ -29,7 +29,7 @@ export class Horario {
     })
     public hora_fin: string;
 
-    @ManyToOne(() => Profesional, (profesional) => profesional.id_profesional)
+    @ManyToOne(() => Profesional, (profesional) => profesional.horarios)
     @JoinColumn({ name: 'id_profesional' })
     public profesional: Profesional;
 }

@@ -9,11 +9,11 @@ export class ProfServicio {
     })
     public id_prof_servicio: number;
 
-    @ManyToOne(() => Profesional, (profesional) => profesional.id_profesional)
+    @ManyToOne(() => Profesional, (profesional) => profesional.profServicio)
     @JoinColumn({ name: 'id_profesional' })
     public profesional: Profesional;
 
-    @ManyToOne(() => Servicio, (servicio) => servicio.id_servicio)
+    @ManyToOne(() => Servicio, (servicio) => servicio.profServicios)
     @JoinColumn({ name: 'id_servicio' })
     public servicio: Servicio;
 }

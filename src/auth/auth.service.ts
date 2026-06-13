@@ -26,6 +26,7 @@ export class AuthService {
                 usuario,
                 token: this.jwtService.sign({
                     sub: usuario.id_usuario,
+                    id_usuario: usuario.id_usuario,
                     rol: usuario.rol,
                 }),
             };
@@ -45,6 +46,7 @@ export class AuthService {
             usuario,
             token: this.jwtService.sign({
                 sub: usuario.id_usuario,
+                id_usuario: usuario.id_usuario,
                 rol: usuario.rol,
             }),
         };
