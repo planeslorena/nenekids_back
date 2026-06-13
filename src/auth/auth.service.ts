@@ -51,4 +51,13 @@ export class AuthService {
             }),
         };
     }
+
+    async getCurrentUser(id: number) {
+        const usuario = await this.usuarioRepository.findOneBy({ id_usuario: id });
+        if (!usuario) {
+            throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
+        }
+
+        return usuario;
+    }
 }

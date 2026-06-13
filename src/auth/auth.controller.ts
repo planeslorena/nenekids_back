@@ -1,28 +1,35 @@
 import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { CookieOptions, Response } from 'express';
 import { AuthService } from './auth.service';
-import { Response } from 'express';
 import { JwtAuthGuard } from './jwt-auth.guard';
-
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
-  //Trae los datos del cliente por DNI
+  private getAuthCookieOptions(): CookieOptions {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const sameSite = (process.env.COOKIE_SAME_SITE as CookieOptions['sameSite']) || (isProduction ? 'none' : 'lax');
+    const domain = process.env.COOKIE_DOMAIN || undefined;
+
+    return {
+      httpOnly: true,
+      sameSite,
+      secure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === 'true' : isProduction,
+      path: '/',
+      ...(domain ? { domain } : {}),
+    };
+  }
+
   @Post('login')
   async login(
     @Body() body: { dni: number; codigo?: number },
-    @Res({ passthrough: true }) res: Response
+    @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.login(body.dni, body.codigo);
 
     if (result.step === 'LOGGED') {
-      res.cookie('token', result.token, {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: false, // true en producción
-        path: '/',
-      });
+      res.cookie('token', result.token, this.getAuthCookieOptions());
     }
 
     return result;
@@ -31,14 +38,12 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   getMe(@Req() req) {
-    return req.user;
+    return this.authService.getCurrentUser(req.user.sub);
   }
 
   @Post('logout')
   logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie('token', { path: '/' });
+    res.clearCookie('token', this.getAuthCookieOptions());
     return { loggedOut: true };
   }
-
-
 }
