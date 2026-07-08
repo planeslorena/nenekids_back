@@ -12,26 +12,47 @@ import { TurnosService } from './turnos.service';
 export class TurnosController {
   constructor(private readonly turnosService: TurnosService) {}
 
+  private parseIds(value?: string | string[]) {
+    if (!value) return [];
+    const values = Array.isArray(value) ? value : value.split(',');
+    return values.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0);
+  }
+
   @Get('dias-disponibles')
   getDiasDisponibles(
     @Query('id_profesional') idProfesional: string,
     @Query('id_servicio') idServicio: string,
+    @Query('ids_servicios_adicionales') idsServiciosAdicionales?: string | string[],
     @Query('desde') desde?: string,
     @Query('hasta') hasta?: string,
     @Query('cantidad') cantidad?: string,
   ) {
-    return this.turnosService.getDiasDisponibles(+idProfesional, +idServicio, desde, hasta, cantidad ? Number(cantidad) : 1);
+    return this.turnosService.getDiasDisponibles(
+      +idProfesional,
+      +idServicio,
+      desde,
+      hasta,
+      cantidad ? Number(cantidad) : 1,
+      this.parseIds(idsServiciosAdicionales),
+    );
   }
 
   @Get('horarios-disponibles')
   getHorariosDisponibles(
     @Query('id_profesional') idProfesional: string,
     @Query('id_servicio') idServicio: string,
+    @Query('ids_servicios_adicionales') idsServiciosAdicionales?: string | string[],
     @Query('fecha') fecha?: string,
     @Query('dia') dia?: string,
     @Query('cantidad') cantidad?: string,
   ) {
-    return this.turnosService.getHorariosDisponibles(+idProfesional, +idServicio, fecha || dia, cantidad ? Number(cantidad) : 1);
+    return this.turnosService.getHorariosDisponibles(
+      +idProfesional,
+      +idServicio,
+      fecha || dia,
+      cantidad ? Number(cantidad) : 1,
+      this.parseIds(idsServiciosAdicionales),
+    );
   }
 
   @Post()
@@ -52,6 +73,16 @@ export class TurnosController {
     return this.turnosService.findMine(req.user.sub);
   }
 
+  @Get(':id/estado-pago')
+  @UseGuards(JwtAuthGuard)
+  getEstadoPago(
+    @Param('id') id: string,
+    @Req() req,
+    @Query('sincronizar') sincronizar?: string,
+  ) {
+    return this.turnosService.getEstadoPagoTurno(req.user, +id, sincronizar === 'true');
+  }
+
   @Get('admin')
   @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
   findAll(
@@ -63,6 +94,22 @@ export class TurnosController {
       desde,
       hasta,
       id_profesional: idProfesional ? Number(idProfesional) : undefined,
+    });
+  }
+
+  @Get('admin/cancelados')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
+  findCanceledAdmin(
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+    @Query('id_profesional') idProfesional?: string,
+    @Query('estado_devolucion') estadoDevolucion?: string,
+  ) {
+    return this.turnosService.findCanceledAdmin({
+      desde,
+      hasta,
+      id_profesional: idProfesional ? Number(idProfesional) : undefined,
+      estado_devolucion: estadoDevolucion,
     });
   }
 
@@ -96,10 +143,26 @@ export class TurnosController {
     return this.turnosService.updateReservaPagoAdmin(+id, dto.reserva_pagada);
   }
 
+  @Patch('admin/:id/devolucion-reserva')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
+  markReservaRefunded(@Param('id') id: string) {
+    return this.turnosService.markReservaRefundedAdmin(+id);
+  }
+
   @Get('profesional')
   @UseGuards(JwtAuthGuard, new RolesGuard(['PROF']))
-  findProfesional(@Req() req) {
-    return this.turnosService.findProfesional(req.user.sub);
+  findProfesional(
+    @Req() req,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+  ) {
+    return this.turnosService.findProfesional(req.user.sub, { desde, hasta });
+  }
+
+  @Post('profesional')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['PROF']))
+  createProfesional(@Body() dto: CreateAdminTurnoDto, @Req() req) {
+    return this.turnosService.createTurnoProfesional(dto, req.user.sub);
   }
 
   @Patch(':id/cancelar')

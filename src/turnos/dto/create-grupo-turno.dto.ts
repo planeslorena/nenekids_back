@@ -19,6 +19,11 @@ export class CreateGrupoTurnoDto {
   id_servicio: number;
 
   @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  ids_servicios_adicionales?: number[];
+
+  @IsOptional()
   @IsString()
   observaciones?: string;
 }

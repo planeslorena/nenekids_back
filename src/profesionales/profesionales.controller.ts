@@ -26,6 +26,12 @@ export class ProfesionalesController {
     return this.profesionalesService.findMe(req.user.sub);
   }
 
+  @Patch('me')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['PROF']))
+  updateMe(@Req() req, @Body() createProfesionalDto: CreateProfesionalDto) {
+    return this.profesionalesService.updateMe(req.user.sub, createProfesionalDto);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.profesionalesService.findOne(+id);

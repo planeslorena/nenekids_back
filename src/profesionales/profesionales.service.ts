@@ -29,7 +29,7 @@ export class ProfesionalesService {
 
   async findAllWithServicios() {
     const profesionales = await this.profesionalRepository.find({
-      relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio'],
+      relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio', 'profServicio.servicio.complementos_permitidos'],
       order: { id_profesional: 'ASC' },
     });
     return profesionales.map((profesional) => ({
@@ -43,7 +43,7 @@ export class ProfesionalesService {
 
   async findAllAdmin() {
     const profesionales = await this.profesionalRepository.find({
-      relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio'],
+      relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio', 'profServicio.servicio.complementos_permitidos'],
       order: { id_profesional: 'ASC' },
     });
     return profesionales.map((profesional) => this.mapAdmin(profesional));
@@ -52,7 +52,7 @@ export class ProfesionalesService {
   async findOne(id: number) {
     const profesional = await this.profesionalRepository.findOne({
       where: { id_profesional: id },
-      relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio'],
+      relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio', 'profServicio.servicio.complementos_permitidos'],
     });
 
     if (!profesional) {
@@ -65,7 +65,7 @@ export class ProfesionalesService {
   async findMe(userId: number) {
     const profesional = await this.profesionalRepository.findOne({
       where: { usuario: { id_usuario: userId } },
-      relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio', 'turnos'],
+      relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio', 'profServicio.servicio.complementos_permitidos', 'turnos'],
     });
 
     if (!profesional) {
@@ -176,6 +176,28 @@ export class ProfesionalesService {
     return this.findOne(id);
   }
 
+  async updateMe(userId: number, dto: CreateProfesionalDto) {
+    const profesional = await this.profesionalRepository.findOne({
+      where: { usuario: { id_usuario: userId } },
+      relations: ['usuario'],
+    });
+    if (!profesional) {
+      throw new NotFoundException('Profesional no encontrado para este usuario');
+    }
+
+    if (dto.nombre !== undefined) profesional.usuario.nombre = dto.nombre;
+    if (dto.dni !== undefined) profesional.usuario.dni = dto.dni;
+    if (dto.mail !== undefined) profesional.usuario.mail = dto.mail;
+    if (dto.telefono !== undefined) profesional.usuario.telefono = dto.telefono;
+    if (dto.codigo !== undefined) profesional.usuario.codigo = dto.codigo;
+    if (dto.fecha_nacimiento !== undefined) profesional.fecha_nacimiento = dto.fecha_nacimiento;
+
+    await this.usuarioRepository.save(profesional.usuario);
+    await this.profesionalRepository.save(profesional);
+
+    return this.findMe(userId);
+  }
+
   async remove(id: number) {
     const profesional = await this.profesionalRepository.findOne({ where: { id_profesional: id } });
     if (!profesional) {
@@ -271,8 +293,31 @@ export class ProfesionalesService {
       descripcion: servicio.descripcion,
       duracion: servicio.duracion,
       precio: servicio.precio,
+      precio_efectivo: servicio.precio,
+      precio_transferencia: servicio.precio_transferencia ?? servicio.precio,
       reserva: servicio.monto_reserva,
       visible_cliente: servicio.visible,
+      visible_como_complemento: servicio.visible_como_complemento,
+      imagenes: servicio.imagenes || [],
+      complementos_permitidos: (servicio.complementos_permitidos || [])
+        .filter((complemento) => complemento.visible_como_complemento)
+        .map((complemento) => ({
+          id_servicio: complemento.id_servicio,
+          nombre: complemento.nombre,
+          descripcion: complemento.descripcion,
+          duracion: complemento.duracion,
+          precio: complemento.precio,
+          precio_efectivo: complemento.precio,
+          precio_transferencia: complemento.precio_transferencia ?? complemento.precio,
+          reserva: complemento.monto_reserva,
+          visible_cliente: complemento.visible,
+          visible_como_complemento: complemento.visible_como_complemento,
+          imagenes: complemento.imagenes || [],
+          categoria: null,
+        })),
+      complementos_permitidos_ids: (servicio.complementos_permitidos || [])
+        .filter((complemento) => complemento.visible_como_complemento)
+        .map((complemento) => complemento.id_servicio),
       categoria: null,
     };
   }

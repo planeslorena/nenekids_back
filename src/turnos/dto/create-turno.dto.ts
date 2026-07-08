@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateTurnoDto {
   @IsString()
@@ -15,6 +15,11 @@ export class CreateTurnoDto {
 
   @IsInt()
   id_servicio: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  ids_servicios_adicionales?: number[];
 
   @IsOptional()
   @IsString()

@@ -1,4 +1,21 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Length } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, IsUrl, Length, ValidateNested } from 'class-validator';
+
+export class ServicioImagenDto {
+  @IsUrl({ require_tld: false })
+  url: string;
+
+  @IsString()
+  pathname: string;
+
+  @IsOptional()
+  @IsString()
+  alt?: string;
+
+  @IsOptional()
+  @IsInt()
+  orden?: number;
+}
 
 export class CreateServicioDto {
   @IsString()
@@ -17,6 +34,10 @@ export class CreateServicioDto {
 
   @IsOptional()
   @IsInt()
+  precio_transferencia?: number;
+
+  @IsOptional()
+  @IsInt()
   monto_reserva?: number;
 
   @IsOptional()
@@ -30,4 +51,19 @@ export class CreateServicioDto {
   @IsOptional()
   @IsBoolean()
   visible_cliente?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  visible_como_complemento?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServicioImagenDto)
+  imagenes?: ServicioImagenDto[];
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  complementos_permitidos_ids?: number[];
 }

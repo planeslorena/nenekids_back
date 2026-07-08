@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { createHmac, timingSafeEqual } from 'crypto';
 import MercadoPagoConfig, { Payment, Preference } from 'mercadopago';
 import { Servicio } from 'src/servicios/entities/servicio.entity';
 import { PaymentStatus, Turno, TurnoStatus } from 'src/turnos/entities/turno.entity';
@@ -37,7 +38,8 @@ export class PagosService {
   }
 
   async crearPreferencia(turno: Turno, servicio: Servicio) {
-    if (!servicio.monto_reserva || Number(servicio.monto_reserva) <= 0) {
+    const montoReserva = Number(turno.paymentAmount || turno.monto_reserva_total || servicio.monto_reserva || 0);
+    if (montoReserva <= 0) {
       throw new BadRequestException('El servicio no requiere pago de reserva');
     }
 
@@ -49,10 +51,10 @@ export class PagosService {
       body: {
         items: [{
           id: turno.id_turno.toString(),
-          title: servicio.nombre,
+          title: this.getTituloTurno(turno, servicio),
           quantity: 1,
           currency_id: 'ARS',
-          unit_price: Number(servicio.monto_reserva),
+          unit_price: montoReserva,
         }],
         external_reference: turno.id_turno.toString(),
         back_urls: {
@@ -68,11 +70,12 @@ export class PagosService {
   }
 
   async crearPreferenciaGrupo(turnos: Turno[], servicio: Servicio, externalReference: string) {
-    if (!servicio.monto_reserva || Number(servicio.monto_reserva) <= 0) {
-      throw new BadRequestException('El servicio no requiere pago de reserva');
-    }
     if (!turnos.length) {
       throw new BadRequestException('No hay turnos para generar la preferencia');
+    }
+    const montoReserva = Number(turnos[0].paymentAmount || turnos[0].monto_reserva_total || servicio.monto_reserva || 0);
+    if (montoReserva <= 0) {
+      throw new BadRequestException('El servicio no requiere pago de reserva');
     }
 
     const preference = new Preference(this.getClient());
@@ -83,10 +86,10 @@ export class PagosService {
       body: {
         items: [{
           id: externalReference,
-          title: `${servicio.nombre} x ${turnos.length}`,
+          title: `${this.getTituloTurno(turnos[0], servicio)} x ${turnos.length}`,
           quantity: turnos.length,
           currency_id: 'ARS',
-          unit_price: Number(servicio.monto_reserva),
+          unit_price: montoReserva,
         }],
         external_reference: externalReference,
         back_urls: {
@@ -115,10 +118,14 @@ export class PagosService {
     if (turnoId.startsWith('grupo:')) {
       const turnos = await this.turnoRepository.find({ where: { externalReference: turnoId } });
       if (!turnos.length) throw new NotFoundException('Turnos asociados al pago no encontrados');
+      const turnosAConfirmar: number[] = [];
 
       const updated = turnos.map((turno) => {
         turno.mercadoPagoPaymentId = paymentId;
         if (data.status === 'approved') {
+          if (turno.paymentStatus !== PaymentStatus.APROBADO) {
+            turnosAConfirmar.push(turno.id_turno);
+          }
           turno.estado = TurnoStatus.CONFIRMADO;
           turno.paymentStatus = PaymentStatus.APROBADO;
           turno.paidAt = new Date();
@@ -132,7 +139,9 @@ export class PagosService {
 
       const saved = await this.turnoRepository.save(updated);
       if (data.status === 'approved') {
-        saved.forEach((turno) => void this.whatsappService.sendTurnoConfirmation(turno.id_turno));
+        saved
+          .filter((turno) => turnosAConfirmar.includes(turno.id_turno))
+          .forEach((turno) => void this.whatsappService.sendTurnoConfirmation(turno.id_turno));
       }
       return saved;
     }
@@ -142,6 +151,9 @@ export class PagosService {
 
     turno.mercadoPagoPaymentId = paymentId;
     if (data.status === 'approved') {
+      if (turno.paymentStatus === PaymentStatus.APROBADO) {
+        return turno;
+      }
       turno.estado = TurnoStatus.CONFIRMADO;
       turno.paymentStatus = PaymentStatus.APROBADO;
       turno.paidAt = new Date();
@@ -159,15 +171,64 @@ export class PagosService {
     return turno;
   }
 
-  webhook(payload: any) {
-    const paymentId = payload?.data?.id || payload?.id;
-    if (paymentId) void this.procesarPago(String(paymentId));
-    return { received: true };
+  async sincronizarPagoPorTurno(turnoId: number) {
+    const turno = await this.turnoRepository.findOne({ where: { id_turno: turnoId } });
+    if (!turno) throw new NotFoundException('Turno asociado al pago no encontrado');
+
+    const payment = new Payment(this.getClient());
+    const pagos = await payment.search({
+      options: {
+        external_reference: turno.externalReference || turnoId.toString(),
+        sort: 'date_created',
+        criteria: 'desc',
+      },
+    });
+
+    const pago = pagos.results?.[0];
+    if (!pago?.id) return null;
+
+    return this.procesarPago(pago.id.toString());
+  }
+
+  validarWebhookSignature({
+    dataId,
+    xRequestId,
+    xSignature,
+  }: {
+    dataId?: string;
+    xRequestId?: string;
+    xSignature?: string;
+  }) {
+    const secret = this.configService.get<string>('MP_WEBHOOK_SECRET');
+    if (!secret) return true;
+    if (!dataId || !xRequestId || !xSignature) return false;
+
+    const signatureParts = xSignature.split(',').reduce((acc, part) => {
+      const [key, value] = part.split('=');
+      if (key && value) acc[key.trim()] = value.trim();
+      return acc;
+    }, {} as Record<string, string>);
+
+    const ts = signatureParts.ts;
+    const hash = signatureParts.v1;
+    if (!ts || !hash) return false;
+
+    const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+    const expectedHash = createHmac('sha256', secret).update(manifest).digest('hex');
+    const expected = Buffer.from(expectedHash);
+    const received = Buffer.from(hash);
+
+    return expected.length === received.length && timingSafeEqual(expected, received);
   }
 
   private getRequiredUrl(key: string) {
     const value = this.configService.get<string>(key)?.trim().replace(/\/+$/, '');
     if (!value) throw new BadRequestException(`Falta configurar ${key}`);
     return value;
+  }
+
+  private getTituloTurno(turno: Turno, servicio: Servicio) {
+    const adicionales = (turno.servicios_adicionales || []).map((item) => item.nombre);
+    return [servicio.nombre, ...adicionales].join(' + ');
   }
 }

@@ -1,7 +1,7 @@
 import { Cliente } from 'src/clientes/entities/cliente.entity';
 import { Profesional } from 'src/profesionales/entities/profesional.entity';
 import { Servicio } from 'src/servicios/entities/servicio.entity';
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, JoinColumn, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 
 export enum TurnoStatus {
     PENDIENTE_PAGO = 'PENDIENTE_PAGO',
@@ -17,6 +17,7 @@ export enum PaymentStatus {
 }
 
 @Entity('turnos')
+@Index('IDX_turnos_estado_pago_vencimiento', ['paymentStatus', 'paymentExpiresAt'])
 export class Turno {
     @PrimaryGeneratedColumn({
         type: 'int',
@@ -71,8 +72,20 @@ export class Turno {
     @Column({ name: 'paymentAmount', type: 'int', nullable: true })
     public paymentAmount?: number;
 
+    @Column({ name: 'precio_total', type: 'int', nullable: true })
+    public precio_total?: number | null;
+
+    @Column({ name: 'monto_reserva_total', type: 'int', nullable: true })
+    public monto_reserva_total?: number | null;
+
+    @Column({ name: 'duracion_total', type: 'int', nullable: true })
+    public duracion_total?: number | null;
+
     @Column({ name: 'paidAt', type: 'datetime', nullable: true })
     public paidAt?: Date;
+
+    @Column({ name: 'reservaRefundedAt', type: 'datetime', nullable: true })
+    public reservaRefundedAt?: Date;
 
     @Column({ name: 'paymentExpiresAt', type: 'datetime', nullable: true })
     public paymentExpiresAt?: Date;
@@ -98,5 +111,13 @@ export class Turno {
     @ManyToOne(() => Servicio, (servicio) => servicio.turnos)
     @JoinColumn({ name: 'id_servicio' })
     public servicio: Servicio;
+
+    @ManyToMany(() => Servicio, (servicio) => servicio.turnosComoAdicional)
+    @JoinTable({
+        name: 'turnos_servicios_adicionales',
+        joinColumn: { name: 'id_turno', referencedColumnName: 'id_turno' },
+        inverseJoinColumn: { name: 'id_servicio', referencedColumnName: 'id_servicio' },
+    })
+    public servicios_adicionales: Servicio[];
 
 }

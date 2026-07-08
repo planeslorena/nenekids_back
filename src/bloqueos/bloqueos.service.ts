@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Profesional } from 'src/profesionales/entities/profesional.entity';
 import { Between, Repository } from 'typeorm';
@@ -34,6 +34,11 @@ export class BloqueosService {
     return bloqueos.map((bloqueo) => this.serialize(bloqueo));
   }
 
+  async findAllForProfesional(userId: number, params: { desde?: string; hasta?: string } = {}) {
+    const idProfesional = await this.getIdByUsuario(userId);
+    return this.findAll({ ...params, id_profesional: idProfesional });
+  }
+
   async create(dto: CreateBloqueoDto) {
     const profesional = await this.profesionalRepository.findOneBy({ id_profesional: dto.id_profesional });
     if (!profesional) {
@@ -53,6 +58,14 @@ export class BloqueosService {
     return this.serialize(bloqueo);
   }
 
+  async createForProfesional(dto: CreateBloqueoDto, userId: number) {
+    const idProfesional = await this.getIdByUsuario(userId);
+    return this.create({
+      ...dto,
+      id_profesional: idProfesional,
+    });
+  }
+
   async remove(id: number) {
     const bloqueo = await this.bloqueoRepository.findOneBy({ id_bloqueo: id });
     if (!bloqueo) {
@@ -60,6 +73,33 @@ export class BloqueosService {
     }
     await this.bloqueoRepository.remove(bloqueo);
     return { deleted: true };
+  }
+
+  async removeForProfesional(id: number, userId: number) {
+    const idProfesional = await this.getIdByUsuario(userId);
+    const bloqueo = await this.bloqueoRepository.findOne({
+      where: { id_bloqueo: id },
+      relations: ['profesional'],
+    });
+    if (!bloqueo) {
+      throw new NotFoundException('Bloqueo no encontrado');
+    }
+    if (bloqueo.profesional?.id_profesional !== idProfesional) {
+      throw new ForbiddenException('No podes borrar un bloqueo de otro profesional');
+    }
+    await this.bloqueoRepository.remove(bloqueo);
+    return { deleted: true };
+  }
+
+  private async getIdByUsuario(userId: number) {
+    const profesional = await this.profesionalRepository.findOne({
+      where: { usuario: { id_usuario: userId } },
+      relations: ['usuario'],
+    });
+    if (!profesional) {
+      throw new NotFoundException('Profesional no encontrado');
+    }
+    return profesional.id_profesional;
   }
 
   private serialize(bloqueo: Bloqueo) {

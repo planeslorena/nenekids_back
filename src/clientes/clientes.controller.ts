@@ -21,6 +21,12 @@ export class ClientesController {
     return this.clientesService.findAll();
   }
 
+  @Get('profesional')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['PROF']))
+  findAllProfesional() {
+    return this.clientesService.findAll();
+  }
+
   @Get('mis-ninos')
   @UseGuards(JwtAuthGuard)
   findMine(@Req() req) {

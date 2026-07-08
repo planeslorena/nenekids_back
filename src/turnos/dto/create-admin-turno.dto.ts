@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateAdminTurnoDto {
   @IsInt()
@@ -9,6 +9,11 @@ export class CreateAdminTurnoDto {
 
   @IsInt()
   id_servicio: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  ids_servicios_adicionales?: number[];
 
   @IsString()
   fecha: string;

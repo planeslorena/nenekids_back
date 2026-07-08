@@ -17,6 +17,14 @@ export class Cliente {
     public nombre: string;
 
     @Column({
+        name: 'dni',
+        length: 20,
+        nullable: false,
+        unique: true,
+    })
+    public dni: string;
+
+    @Column({
         name: 'fecha_nacimiento',
         length: 50,
         nullable: false,
@@ -29,6 +37,20 @@ export class Cliente {
         nullable: true,
     })
     public observaciones?: string;
+
+    @Column({
+        name: 'foto_url',
+        length: 500,
+        nullable: true,
+    })
+    public foto_url?: string;
+
+    @Column({
+        name: 'foto_pathname',
+        length: 500,
+        nullable: true,
+    })
+    public foto_pathname?: string;
 
     @ManyToOne(() => Usuario, (usuario) => usuario.clientes)
     @JoinColumn({ name: 'id_usuario' })
