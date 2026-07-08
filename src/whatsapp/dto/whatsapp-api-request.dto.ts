@@ -4,6 +4,27 @@ export interface WhatsappTemplateTextParameter {
   parameter_name?: string;
 }
 
+export interface WhatsappTemplateImageParameter {
+  type: 'image';
+  image: {
+    link: string;
+  };
+}
+
+export interface WhatsappTemplateBodyComponent {
+  type: 'body';
+  parameters: WhatsappTemplateTextParameter[];
+}
+
+export interface WhatsappTemplateHeaderComponent {
+  type: 'header';
+  parameters: WhatsappTemplateImageParameter[];
+}
+
+export type WhatsappTemplateComponent =
+  | WhatsappTemplateBodyComponent
+  | WhatsappTemplateHeaderComponent;
+
 export interface WhatsappApiRequest {
   messaging_product: 'whatsapp';
   to: string;
@@ -13,9 +34,6 @@ export interface WhatsappApiRequest {
     language: {
       code: string;
     };
-    components: Array<{
-      type: 'body';
-      parameters: WhatsappTemplateTextParameter[];
-    }>;
+    components: WhatsappTemplateComponent[];
   };
 }

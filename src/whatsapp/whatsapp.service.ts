@@ -16,6 +16,7 @@ import {
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
+  private readonly familyTemplateImageUrl = 'PEGAR_LINK_PUBLICO_DE_LA_IMAGEN_ACA';
 
   constructor(
     private readonly configService: ConfigService,
@@ -209,7 +210,7 @@ export class WhatsappService {
     const hora = dayjs(turno.fechaHora).format('HH:mm');
     const informacionServicio = turno.servicio?.descripcion?.trim() || 'Te compartiremos los detalles del servicio al llegar.';
 
-    return this.prepareTemplateRequest(recipientPhone, templateName, [
+    return this.prepareTemplateRequestWithImage(recipientPhone, templateName, this.familyTemplateImageUrl, [
       { type: 'text', text: nino },
       { type: 'text', text: fecha },
       { type: 'text', text: hora },
@@ -223,6 +224,7 @@ export class WhatsappService {
     const nino = turno.cliente?.nombre || 'Nene';
     const telefono = turno.cliente?.adulto?.telefono?.toString() || 'Sin telefono';
     const servicio = this.getServicioLabel(turno);
+    const profesional = turno.profesional?.usuario?.nombre || 'Profesional asignado';
     const fechaHora = dayjs(turno.fechaHora).format('DD/MM/YYYY HH:mm');
     const reserva = Number(turno.monto_reserva_total ?? turno.paymentAmount ?? turno.servicio?.monto_reserva ?? 0);
 
@@ -231,6 +233,7 @@ export class WhatsappService {
       { type: 'text', parameter_name: 'turno', text: fechaHora },
       { type: 'text', parameter_name: 'telefono', text: telefono },
       { type: 'text', parameter_name: 'servicio', text: servicio },
+      { type: 'text', parameter_name: 'profesional', text: profesional },
       { type: 'text', parameter_name: 'reserva', text: reserva > 0 ? `$${reserva}` : 'Sin reserva' },
     ]);
   }
@@ -238,7 +241,7 @@ export class WhatsappService {
   private prepareTemplateRequest(
     to: string,
     templateName: string,
-    parameters: WhatsappApiRequest['template']['components'][number]['parameters'],
+    parameters: Extract<WhatsappApiRequest['template']['components'][number], { type: 'body' }>['parameters'],
   ): WhatsappApiRequest {
     return {
       messaging_product: 'whatsapp',
@@ -250,6 +253,37 @@ export class WhatsappService {
           code: this.configService.get<string>('WHATSAPP_TEMPLATE_LANGUAGE') || 'es_AR',
         },
         components: [{ type: 'body', parameters }],
+      },
+    };
+  }
+
+  private prepareTemplateRequestWithImage(
+    to: string,
+    templateName: string,
+    imageUrl: string,
+    parameters: Extract<WhatsappApiRequest['template']['components'][number], { type: 'body' }>['parameters'],
+  ): WhatsappApiRequest {
+    return {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: {
+          code: this.configService.get<string>('WHATSAPP_TEMPLATE_LANGUAGE') || 'es_AR',
+        },
+        components: [
+          {
+            type: 'header',
+            parameters: [
+              {
+                type: 'image',
+                image: { link: imageUrl },
+              },
+            ],
+          },
+          { type: 'body', parameters },
+        ],
       },
     };
   }
