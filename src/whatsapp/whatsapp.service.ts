@@ -16,7 +16,7 @@ import {
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
-  private readonly familyTemplateImageUrl = 'PEGAR_LINK_PUBLICO_DE_LA_IMAGEN_ACA';
+  private readonly familyTemplateImageUrl = 'https://nj7sbuhsg7gmdxf6.public.blob.vercel-storage.com/log_pelunene.png';
 
   constructor(
     private readonly configService: ConfigService,

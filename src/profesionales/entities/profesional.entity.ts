@@ -19,6 +19,20 @@ export class Profesional {
     })
     public fecha_nacimiento: string;
 
+    @Column({
+        name: 'foto_url',
+        length: 500,
+        nullable: true,
+    })
+    public foto_url?: string;
+
+    @Column({
+        name: 'foto_pathname',
+        length: 500,
+        nullable: true,
+    })
+    public foto_pathname?: string;
+
     @OneToOne(() => Usuario)
     @JoinColumn({ name: 'id_usuario' })
     public usuario: Usuario;

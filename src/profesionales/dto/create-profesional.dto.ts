@@ -47,6 +47,14 @@ export class CreateProfesionalDto {
   fecha_nacimiento: string;
 
   @IsOptional()
+  @IsString()
+  foto_url?: string;
+
+  @IsOptional()
+  @IsString()
+  foto_pathname?: string;
+
+  @IsOptional()
   @IsInt()
   id_usuario?: number;
 

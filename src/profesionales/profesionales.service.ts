@@ -35,6 +35,8 @@ export class ProfesionalesService {
     return profesionales.map((profesional) => ({
       id_profesional: profesional.id_profesional,
       nombre: profesional.usuario?.nombre || `Profesional ${profesional.id_profesional}`,
+      foto_url: profesional.foto_url,
+      foto_pathname: profesional.foto_pathname,
       servicios: (profesional.profServicio || [])
         .filter((relacion) => relacion.servicio?.visible)
         .map((relacion) => this.mapServicio(relacion.servicio)),
@@ -108,6 +110,8 @@ export class ProfesionalesService {
     const profesional = await this.profesionalRepository.save(
       this.profesionalRepository.create({
         fecha_nacimiento: createProfesionalDto.fecha_nacimiento,
+        foto_url: createProfesionalDto.foto_url,
+        foto_pathname: createProfesionalDto.foto_pathname,
         usuario,
       }),
     );
@@ -149,6 +153,8 @@ export class ProfesionalesService {
     if (dto.telefono !== undefined) profesional.usuario.telefono = dto.telefono;
     if (dto.codigo !== undefined) profesional.usuario.codigo = dto.codigo;
     if (dto.fecha_nacimiento !== undefined) profesional.fecha_nacimiento = dto.fecha_nacimiento;
+    if (dto.foto_url !== undefined) profesional.foto_url = dto.foto_url;
+    if (dto.foto_pathname !== undefined) profesional.foto_pathname = dto.foto_pathname;
 
     await this.usuarioRepository.save(profesional.usuario);
     await this.profesionalRepository.save(profesional);
@@ -191,6 +197,8 @@ export class ProfesionalesService {
     if (dto.telefono !== undefined) profesional.usuario.telefono = dto.telefono;
     if (dto.codigo !== undefined) profesional.usuario.codigo = dto.codigo;
     if (dto.fecha_nacimiento !== undefined) profesional.fecha_nacimiento = dto.fecha_nacimiento;
+    if (dto.foto_url !== undefined) profesional.foto_url = dto.foto_url;
+    if (dto.foto_pathname !== undefined) profesional.foto_pathname = dto.foto_pathname;
 
     await this.usuarioRepository.save(profesional.usuario);
     await this.profesionalRepository.save(profesional);
@@ -261,6 +269,8 @@ export class ProfesionalesService {
     return {
       id_profesional: profesional.id_profesional,
       fecha_nacimiento: profesional.fecha_nacimiento,
+      foto_url: profesional.foto_url,
+      foto_pathname: profesional.foto_pathname,
       usuario: profesional.usuario,
       nombre: profesional.usuario?.nombre || `Profesional ${profesional.id_profesional}`,
       dni: profesional.usuario?.dni,
