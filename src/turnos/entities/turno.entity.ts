@@ -18,6 +18,7 @@ export enum PaymentStatus {
 
 @Entity('turnos')
 @Index('IDX_turnos_estado_pago_vencimiento', ['paymentStatus', 'paymentExpiresAt'])
+@Index('IDX_turnos_profesional_fechaHora', ['profesional', 'fechaHora'])
 export class Turno {
     @PrimaryGeneratedColumn({
         type: 'int',

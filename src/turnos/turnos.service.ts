@@ -352,6 +352,54 @@ export class TurnosService {
     return this.aplicarDisponibilidadPublica(idProfesional, fecha, disponibles);
   }
 
+  private calcularHorariosDisponibles(params: {
+    fecha: string;
+    duracionTurno: number;
+    turnosConsecutivos: number;
+    horarios: Horario[];
+    ocupados: Turno[];
+    bloqueos: Bloqueo[];
+  }) {
+    const { fecha, duracionTurno, turnosConsecutivos, horarios, ocupados, bloqueos } = params;
+    const diaSemana = dayjs(fecha).day();
+    const horariosDelDia = horarios.filter((horario) => Number(horario.dia) === diaSemana || this.matchDia(String(horario.dia), diaSemana));
+
+    if (bloqueos.some((bloqueo) => bloqueo.tipo === TipoBloqueo.DIA_COMPLETO)) return [];
+
+    const intervalosTurnos = ocupados
+      .filter((turno) => turno.estado !== TurnoStatus.CANCELADO)
+      .map((turno) => {
+        const inicio = dayjs(turno.fechaHora);
+        return { inicio, fin: inicio.add(turno.duracion_total || turno.servicio?.duracion || duracionTurno, 'minute') };
+      });
+
+    const intervalosBloqueos = bloqueos
+      .filter((bloqueo) => bloqueo.tipo === TipoBloqueo.RANGO_HORARIO && bloqueo.hora_inicio && bloqueo.hora_fin)
+      .map((bloqueo) => ({
+        inicio: dayjs(`${fecha} ${bloqueo.hora_inicio}`),
+        fin: dayjs(`${fecha} ${bloqueo.hora_fin}`),
+      }));
+
+    const intervalos = [...intervalosTurnos, ...intervalosBloqueos];
+    const slotsHabituales = horariosDelDia.flatMap((horario) =>
+      this.generateSlots(horario.hora_inicio, horario.hora_fin, duracionTurno, duracionTurno * turnosConsecutivos),
+    );
+    const slotsExtra = bloqueos
+      .filter((bloqueo) => bloqueo.tipo === TipoBloqueo.ATENCION_EXTRA && bloqueo.hora_inicio && bloqueo.hora_fin)
+      .flatMap((bloqueo) =>
+        this.generateSlots(bloqueo.hora_inicio, bloqueo.hora_fin, duracionTurno, duracionTurno * turnosConsecutivos),
+      );
+    const slots = [...slotsHabituales, ...slotsExtra];
+
+    const disponibles = slots.filter((hora) => {
+      const inicio = dayjs(`${fecha} ${hora}`);
+      const fin = inicio.add(duracionTurno * turnosConsecutivos, 'minute');
+      return !intervalos.some((intervalo) => inicio.isBefore(intervalo.fin) && fin.isAfter(intervalo.inicio));
+    });
+
+    return Array.from(new Set(disponibles)).sort((a, b) => this.toMinutes(a) - this.toMinutes(b));
+  }
+
   private async getHorariosDisponiblesCompletos(
     idProfesional: number,
     idServicio: number,
@@ -366,12 +414,10 @@ export class TurnosService {
     });
     const duracionTurno = bundle.duracionTotal;
     const turnosConsecutivos = Math.max(1, cantidad || 1);
-    const diaSemana = dayjs(fecha).day();
     const horarios = await this.horarioRepository.find({
       where: { profesional: { id_profesional: idProfesional } },
       relations: ['profesional'],
     });
-    const horariosDelDia = horarios.filter((horario) => Number(horario.dia) === diaSemana || this.matchDia(String(horario.dia), diaSemana));
 
     const inicioDia = dayjs(fecha).startOf('day').toDate();
     const finDia = dayjs(fecha).endOf('day').toDate();
@@ -382,37 +428,11 @@ export class TurnosService {
       },
       relations: ['servicio', 'servicios_adicionales'],
     });
-    const intervalosTurnos = ocupados
-      .filter((turno) => turno.estado !== TurnoStatus.CANCELADO)
-      .map((turno) => {
-        const inicio = dayjs(turno.fechaHora);
-        return { inicio, fin: inicio.add(turno.duracion_total || turno.servicio?.duracion || duracionTurno, 'minute') };
-      });
 
     const bloqueos = await this.bloqueoRepository.find({
       where: { profesional: { id_profesional: idProfesional }, dia: fecha },
     });
-    if (bloqueos.some((bloqueo) => bloqueo.tipo === TipoBloqueo.DIA_COMPLETO)) return [];
-
-    const intervalosBloqueos = bloqueos
-      .filter((bloqueo) => bloqueo.tipo === TipoBloqueo.RANGO_HORARIO && bloqueo.hora_inicio && bloqueo.hora_fin)
-      .map((bloqueo) => ({
-        inicio: dayjs(`${fecha} ${bloqueo.hora_inicio}`),
-        fin: dayjs(`${fecha} ${bloqueo.hora_fin}`),
-      }));
-
-    const intervalos = [...intervalosTurnos, ...intervalosBloqueos];
-    const slots = horariosDelDia.flatMap((horario) =>
-      this.generateSlots(horario.hora_inicio, horario.hora_fin, duracionTurno, duracionTurno * turnosConsecutivos),
-    );
-
-    const disponibles = slots.filter((hora) => {
-      const inicio = dayjs(`${fecha} ${hora}`);
-      const fin = inicio.add(duracionTurno * turnosConsecutivos, 'minute');
-      return !intervalos.some((intervalo) => inicio.isBefore(intervalo.fin) && fin.isAfter(intervalo.inicio));
-    });
-
-    return Array.from(new Set(disponibles)).sort((a, b) => this.toMinutes(a) - this.toMinutes(b));
+    return this.calcularHorariosDisponibles({ fecha, duracionTurno, turnosConsecutivos, horarios, ocupados, bloqueos });
   }
 
   async getConfiguracionDisponibilidad() {
@@ -433,13 +453,65 @@ export class TurnosService {
   async getDiasDisponibles(idProfesional: number, idServicio: number, desde?: string, hasta?: string, cantidad = 1, idsServiciosAdicionales: number[] = []) {
     const start = dayjs(desde || dayjs().format('YYYY-MM-DD')).startOf('day');
     const end = hasta ? dayjs(hasta).startOf('day') : start.add(30, 'day');
+    const bundle = await this.resolveServicioBundle(idServicio, idsServiciosAdicionales, {
+      portalFamiliar: true,
+      idProfesional,
+    });
+    const duracionTurno = bundle.duracionTotal;
+    const turnosConsecutivos = Math.max(1, cantidad || 1);
+    const inicioRango = start.startOf('day').toDate();
+    const finRango = end.endOf('day').toDate();
+    const desdeKey = start.format('YYYY-MM-DD');
+    const hastaKey = end.format('YYYY-MM-DD');
+    const [horarios, ocupados, bloqueos] = await Promise.all([
+      this.horarioRepository.find({
+        where: { profesional: { id_profesional: idProfesional } },
+        relations: ['profesional'],
+      }),
+      this.turnoRepository.find({
+        where: {
+          fechaHora: Between(inicioRango, finRango),
+          profesional: { id_profesional: idProfesional },
+        },
+        relations: ['servicio', 'servicios_adicionales'],
+      }),
+      this.bloqueoRepository.find({
+        where: {
+          dia: Between(desdeKey, hastaKey),
+          profesional: { id_profesional: idProfesional },
+        },
+      }),
+    ]);
+    const turnosPorFecha = new Map<string, Turno[]>();
+    const bloqueosPorFecha = new Map<string, Bloqueo[]>();
+
+    ocupados.forEach((turno) => {
+      const fechaTurno = dayjs(turno.fechaHora).format('YYYY-MM-DD');
+      const turnosFecha = turnosPorFecha.get(fechaTurno) || [];
+      turnosFecha.push(turno);
+      turnosPorFecha.set(fechaTurno, turnosFecha);
+    });
+
+    bloqueos.forEach((bloqueo) => {
+      const fechaBloqueo = bloqueo.dia.slice(0, 10);
+      const bloqueosFecha = bloqueosPorFecha.get(fechaBloqueo) || [];
+      bloqueosFecha.push(bloqueo);
+      bloqueosPorFecha.set(fechaBloqueo, bloqueosFecha);
+    });
     const dias: string[] = [];
 
     let cursor = start;
     while (cursor.isSameOrBefore(end)) {
       const fecha = cursor.format('YYYY-MM-DD');
-      const horarios = await this.getHorariosDisponibles(idProfesional, idServicio, fecha, cantidad, idsServiciosAdicionales);
-      if (horarios.length) dias.push(fecha);
+      const disponibles = this.calcularHorariosDisponibles({
+        fecha,
+        duracionTurno,
+        turnosConsecutivos,
+        horarios,
+        ocupados: turnosPorFecha.get(fecha) || [],
+        bloqueos: bloqueosPorFecha.get(fecha) || [],
+      });
+      if (disponibles.length) dias.push(fecha);
       cursor = cursor.add(1, 'day');
     }
 
@@ -684,7 +756,7 @@ export class TurnosService {
     if (!profesional) throw new NotFoundException('Profesional no encontrado');
 
     const asignados = new Set((profesional.profServicio || []).map((item) => item.servicio?.id_servicio));
-    const faltante = servicios.find((servicio) => !asignados.has(servicio.id_servicio));
+    const faltante = servicios.find((servicio) => servicio.visible && !asignados.has(servicio.id_servicio));
     if (faltante) {
       throw new BadRequestException(`El profesional no tiene asignado el servicio ${faltante.nombre}`);
     }
@@ -724,7 +796,20 @@ export class TurnosService {
     const inicio = this.toMinutes(hora);
     const fin = inicio + duracion;
     const horarios = await this.horarioRepository.find({ where: { profesional: { id_profesional: idProfesional } } });
-    return horarios.some((horario) => Number(horario.dia) === dia && inicio >= this.toMinutes(horario.hora_inicio) && fin <= this.toMinutes(horario.hora_fin));
+    const bloqueos = await this.bloqueoRepository.find({ where: { profesional: { id_profesional: idProfesional }, dia: fecha } });
+
+    if (bloqueos.some((bloqueo) => bloqueo.tipo === TipoBloqueo.DIA_COMPLETO)) return false;
+
+    const dentroHorarioHabitual = horarios.some((horario) => Number(horario.dia) === dia && inicio >= this.toMinutes(horario.hora_inicio) && fin <= this.toMinutes(horario.hora_fin));
+    const dentroHorarioExtra = bloqueos.some((bloqueo) =>
+      bloqueo.tipo === TipoBloqueo.ATENCION_EXTRA
+      && bloqueo.hora_inicio
+      && bloqueo.hora_fin
+      && inicio >= this.toMinutes(bloqueo.hora_inicio)
+      && fin <= this.toMinutes(bloqueo.hora_fin),
+    );
+
+    return dentroHorarioHabitual || dentroHorarioExtra;
   }
 
   private async getCantidadHorariosVisibles() {

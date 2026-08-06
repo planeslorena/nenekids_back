@@ -5,8 +5,8 @@ export class CreateBloqueoDto {
   fecha: string;
 
   @IsOptional()
-  @IsIn(['DIA_COMPLETO', 'RANGO_HORARIO'])
-  tipo?: 'DIA_COMPLETO' | 'RANGO_HORARIO';
+  @IsIn(['DIA_COMPLETO', 'RANGO_HORARIO', 'ATENCION_EXTRA'])
+  tipo?: 'DIA_COMPLETO' | 'RANGO_HORARIO' | 'ATENCION_EXTRA';
 
   @IsOptional()
   @IsString()

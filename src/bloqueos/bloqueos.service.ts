@@ -45,10 +45,11 @@ export class BloqueosService {
       throw new NotFoundException('Profesional no encontrado');
     }
     const tipo = (dto.tipo || (dto.hora_inicio && dto.hora_fin ? TipoBloqueo.RANGO_HORARIO : TipoBloqueo.DIA_COMPLETO)) as TipoBloqueo;
+    const requiereHorario = tipo === TipoBloqueo.RANGO_HORARIO || tipo === TipoBloqueo.ATENCION_EXTRA;
     const entity = this.bloqueoRepository.create({
         dia: dto.fecha,
-        hora_inicio: tipo === TipoBloqueo.RANGO_HORARIO ? dto.hora_inicio : undefined,
-        hora_fin: tipo === TipoBloqueo.RANGO_HORARIO ? dto.hora_fin : undefined,
+        hora_inicio: requiereHorario ? dto.hora_inicio : undefined,
+        hora_fin: requiereHorario ? dto.hora_fin : undefined,
         motivo: dto.motivo,
         tipo,
         profesional,

@@ -1,12 +1,14 @@
 import { Profesional } from 'src/profesionales/entities/profesional.entity';
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 
 export enum TipoBloqueo {
   DIA_COMPLETO = 'DIA_COMPLETO',
   RANGO_HORARIO = 'RANGO_HORARIO',
+  ATENCION_EXTRA = 'ATENCION_EXTRA',
 }
 
 @Entity('bloqueos')
+@Index('IDX_bloqueos_profesional_dia', ['profesional', 'dia'])
 export class Bloqueo {
   @PrimaryGeneratedColumn({ type: 'int' })
   public id_bloqueo: number;
