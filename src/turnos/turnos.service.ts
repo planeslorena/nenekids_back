@@ -3,7 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Bloqueo, TipoBloqueo } from 'src/bloqueos/entities/bloqueo.entity';
 import { Cliente } from 'src/clientes/entities/cliente.entity';
-import dayjs, { formatLocalDateTime, nowArgentinaDateForDatabase } from 'src/common/date.util';
+import dayjs, { formatLocalDateTime, nowArgentina, nowArgentinaDateForDatabase } from 'src/common/date.util';
 import { PagosService } from 'src/pagos/pagos.service';
 import { HorarioDestacado } from 'src/profesionales/entities/horario-destacado.entity';
 import { Horario } from 'src/profesionales/entities/horario.entity';
@@ -381,6 +381,9 @@ export class TurnosService {
       }));
 
     const intervalos = [...intervalosTurnos, ...intervalosBloqueos];
+    const ahora = nowArgentina();
+    const esHoy = fecha === ahora.format('YYYY-MM-DD');
+    const minutosAhora = ahora.hour() * 60 + ahora.minute();
     const slotsHabituales = horariosDelDia.flatMap((horario) =>
       this.generateSlots(horario.hora_inicio, horario.hora_fin, duracionTurno, duracionTurno * turnosConsecutivos),
     );
@@ -392,6 +395,8 @@ export class TurnosService {
     const slots = [...slotsHabituales, ...slotsExtra];
 
     const disponibles = slots.filter((hora) => {
+      if (esHoy && this.toMinutes(hora) <= minutosAhora) return false;
+
       const inicio = dayjs(`${fecha} ${hora}`);
       const fin = inicio.add(duracionTurno * turnosConsecutivos, 'minute');
       return !intervalos.some((intervalo) => inicio.isBefore(intervalo.fin) && fin.isAfter(intervalo.inicio));
@@ -451,7 +456,7 @@ export class TurnosService {
   }
 
   async getDiasDisponibles(idProfesional: number, idServicio: number, desde?: string, hasta?: string, cantidad = 1, idsServiciosAdicionales: number[] = []) {
-    const start = dayjs(desde || dayjs().format('YYYY-MM-DD')).startOf('day');
+    const start = dayjs(desde || nowArgentina().format('YYYY-MM-DD')).startOf('day');
     const end = hasta ? dayjs(hasta).startOf('day') : start.add(30, 'day');
     const bundle = await this.resolveServicioBundle(idServicio, idsServiciosAdicionales, {
       portalFamiliar: true,
