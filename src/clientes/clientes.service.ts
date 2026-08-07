@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Usuario } from 'src/usuarios/entities/usuario.entity';
 import { Not, Repository } from 'typeorm';
@@ -17,11 +17,14 @@ export class ClientesService {
 
   async create(createClienteDto: CreateClienteDto, user: any) {
     const responsableId =
-      user?.rol === 'ADMIN' && createClienteDto.id_usuario ? createClienteDto.id_usuario : user?.sub;
+      ['ADMIN', 'PROF'].includes(user?.rol) && createClienteDto.id_usuario ? createClienteDto.id_usuario : user?.sub;
 
     const adulto = await this.usuarioRepository.findOneBy({ id_usuario: responsableId });
     if (!adulto) {
       throw new NotFoundException('Adulto responsable no encontrado');
+    }
+    if (adulto.rol !== 'USER') {
+      throw new BadRequestException('El responsable del nino debe ser un usuario familiar');
     }
 
     await this.validateDniDisponible(createClienteDto.dni, adulto.id_usuario);

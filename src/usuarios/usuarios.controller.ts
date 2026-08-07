@@ -26,6 +26,18 @@ export class UsuariosController {
     return this.usuariosService.findAll();
   }
 
+  @Get('responsables')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN', 'PROF']))
+  findResponsables() {
+    return this.usuariosService.findResponsables();
+  }
+
+  @Post('responsables')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN', 'PROF']))
+  createResponsable(@Body() createUsuarioDto: CreateUsuarioDto) {
+    return this.usuariosService.create({ ...createUsuarioDto, rol: 'USER' });
+  }
+
   @Get('administradores')
   @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
   findAdministradores() {

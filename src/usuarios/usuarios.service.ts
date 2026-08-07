@@ -35,6 +35,14 @@ export class UsuariosService {
     return this.usuarioRepository.find({ relations: ['clientes'] });
   }
 
+  findResponsables() {
+    return this.usuarioRepository.find({
+      where: { rol: 'USER' },
+      order: { nombre: 'ASC' },
+      relations: ['clientes'],
+    });
+  }
+
   findAdministradores() {
     return this.usuarioRepository.find({
       where: { rol: 'ADMIN' },
