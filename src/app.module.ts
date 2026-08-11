@@ -13,6 +13,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
 import { BloqueosModule } from './bloqueos/bloqueos.module';
 import { PagosModule } from './pagos/pagos.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { CampaniasModule } from './campanias/campanias.module';
 
 
 @Module({
@@ -38,7 +39,8 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     UsuariosModule,
     BloqueosModule,
     PagosModule,
-    WhatsappModule
+    WhatsappModule,
+    CampaniasModule
   ],
   controllers: [AppController],
   providers: [AppService],
