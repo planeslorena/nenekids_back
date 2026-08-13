@@ -1,17 +1,22 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/roles.guard';
 import { CampaniasService } from './campanias.service';
 import { CreateCampaniaDto } from './dto/create-campania.dto';
 import { UpdateCampaniaDto } from './dto/update-campania.dto';
+import { CampaniaUbicacion } from './entities/campania.entity';
 
 @Controller('campanias')
 export class CampaniasController {
   constructor(private readonly campaniasService: CampaniasService) {}
 
   @Get('activa')
-  findActiva() {
-    return this.campaniasService.findActiva();
+  findActiva(@Query('ubicacion') ubicacion?: CampaniaUbicacion) {
+    return this.campaniasService.findActiva(
+      Object.values(CampaniaUbicacion).includes(ubicacion as CampaniaUbicacion)
+        ? ubicacion
+        : CampaniaUbicacion.HOME,
+    );
   }
 
   @Get('admin')

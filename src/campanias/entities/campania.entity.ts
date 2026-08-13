@@ -1,5 +1,10 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
+export enum CampaniaUbicacion {
+  HOME = 'HOME',
+  CONFIRMACION_TURNO = 'CONFIRMACION_TURNO',
+}
+
 @Entity('campanias')
 export class Campania {
   @PrimaryGeneratedColumn({ type: 'int' })
@@ -19,6 +24,14 @@ export class Campania {
 
   @Column({ name: 'fecha_hasta', type: 'date', nullable: false })
   public fecha_hasta: string;
+
+  @Column({
+    name: 'ubicacion',
+    type: 'enum',
+    enum: CampaniaUbicacion,
+    default: CampaniaUbicacion.HOME,
+  })
+  public ubicacion: CampaniaUbicacion;
 
   @CreateDateColumn({ name: 'createdAt' })
   public createdAt: Date;

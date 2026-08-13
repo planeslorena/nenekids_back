@@ -1,4 +1,5 @@
-import { IsString, IsUrl, Length, Validate, ValidationArguments, ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUrl, Length, Validate, ValidationArguments, ValidatorConstraint, ValidatorConstraintInterface } from 'class-validator';
+import { CampaniaUbicacion } from '../entities/campania.entity';
 
 function isDateOnly(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
@@ -45,4 +46,8 @@ export class CreateCampaniaDto {
   @IsString()
   @Validate(FechaHastaValidator)
   fecha_hasta: string;
+
+  @IsOptional()
+  @IsIn(Object.values(CampaniaUbicacion))
+  ubicacion?: CampaniaUbicacion;
 }

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { CreateCampaniaDto } from './dto/create-campania.dto';
 import { UpdateCampaniaDto } from './dto/update-campania.dto';
-import { Campania } from './entities/campania.entity';
+import { Campania, CampaniaUbicacion } from './entities/campania.entity';
 
 @Injectable()
 export class CampaniasService {
@@ -18,10 +18,11 @@ export class CampaniasService {
     });
   }
 
-  findActiva() {
+  findActiva(ubicacion: CampaniaUbicacion = CampaniaUbicacion.HOME) {
     const today = this.todayArgentina();
     return this.campaniaRepository.findOne({
       where: {
+        ubicacion,
         fecha_desde: LessThanOrEqual(today),
         fecha_hasta: MoreThanOrEqual(today),
       },
@@ -31,7 +32,10 @@ export class CampaniasService {
 
   async create(dto: CreateCampaniaDto) {
     this.validateDateRange(dto.fecha_desde, dto.fecha_hasta);
-    const campania = this.campaniaRepository.create(dto);
+    const campania = this.campaniaRepository.create({
+      ...dto,
+      ubicacion: dto.ubicacion ?? CampaniaUbicacion.HOME,
+    });
     return this.campaniaRepository.save(campania);
   }
 
