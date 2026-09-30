@@ -1,3 +1,4 @@
+import { admiteReserva } from '../profesionales/actividad-profesional';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -109,6 +110,9 @@ export class TurnosService {
     const horaInicial = this.toMinutes(dto.hora);
 
     const turnosGuardados = await this.dataSource.transaction(async (manager) => {
+      for (let index = 0; index < cantidad; index++) {
+        await this.profesionalesService.validarReserva(dto.id_profesional, dto.fecha, this.toTime(horaInicial + bundle.duracionTotal * index), manager);
+      }
       const turnoRepository = manager.getRepository(Turno);
       const turnos = clientes.map((cliente, index) => {
         const hora = this.toTime(horaInicial + bundle.duracionTotal * index);
@@ -159,6 +163,7 @@ export class TurnosService {
   }
 
   async createTurnoAdmin(dto: CreateAdminTurnoDto) {
+    await this.profesionalesService.validarReserva(dto.id_profesional, dto.fecha, dto.hora);
     const cliente = await this.clienteRepository.findOne({
       where: { id_cliente: dto.id_cliente },
       relations: ['adulto'],
@@ -413,6 +418,8 @@ export class TurnosService {
     idsServiciosAdicionales: number[] = [],
     portalFamiliar = true,
   ) {
+    const profesional = await this.profesionalesService.requireProfesional(idProfesional);
+    if (!admiteReserva(profesional.baja_desde, fecha)) return [];
     const bundle = await this.resolveServicioBundle(idServicio, idsServiciosAdicionales, {
       portalFamiliar,
       idProfesional,
@@ -456,6 +463,7 @@ export class TurnosService {
   }
 
   async getDiasDisponibles(idProfesional: number, idServicio: number, desde?: string, hasta?: string, cantidad = 1, idsServiciosAdicionales: number[] = []) {
+    const profesional = await this.profesionalesService.requireProfesional(idProfesional);
     const start = dayjs(desde || nowArgentina().format('YYYY-MM-DD')).startOf('day');
     const end = hasta ? dayjs(hasta).startOf('day') : start.add(30, 'day');
     const bundle = await this.resolveServicioBundle(idServicio, idsServiciosAdicionales, {
@@ -516,7 +524,7 @@ export class TurnosService {
         ocupados: turnosPorFecha.get(fecha) || [],
         bloqueos: bloqueosPorFecha.get(fecha) || [],
       });
-      if (disponibles.length) dias.push(fecha);
+      if (disponibles.length && admiteReserva(profesional.baja_desde, fecha)) dias.push(fecha);
       cursor = cursor.add(1, 'day');
     }
 
@@ -628,7 +636,10 @@ export class TurnosService {
       servicios_adicionales: bundle.adicionales,
     });
 
-    const turnoGuardado = await this.turnoRepository.save(turno);
+    const turnoGuardado = await this.dataSource.transaction(async (manager) => {
+      await this.profesionalesService.validarReserva(id_profesional, fecha, hora, manager);
+      return manager.getRepository(Turno).save(turno);
+    });
 
     if (!requierePago || reservaPagada) {
       void this.whatsappService.sendTurnoConfirmation(turnoGuardado.id_turno);

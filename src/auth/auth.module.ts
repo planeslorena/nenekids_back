@@ -1,3 +1,4 @@
+import { ProfesionalesModule } from '../profesionales/profesionales.module';
 import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
@@ -10,6 +11,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
+    ProfesionalesModule,
     TypeOrmModule.forFeature([Usuario]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { BajaProfesionalDto } from './dto/baja-profesional.dto';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/roles.guard';
 import { CreateHorarioDto } from './dto/create-horario.dto';
@@ -47,6 +48,24 @@ export class ProfesionalesController {
   @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
   update(@Param('id') id: string, @Body() createProfesionalDto: CreateProfesionalDto) {
     return this.profesionalesService.update(+id, createProfesionalDto);
+  }
+
+  @Get(':id/impacto-baja')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
+  impactoBaja(@Param('id') id: string, @Query() dto: BajaProfesionalDto) {
+    return this.profesionalesService.impactoBaja(+id, dto.fecha_desde);
+  }
+
+  @Patch(':id/baja')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
+  baja(@Param('id') id: string, @Body() dto: BajaProfesionalDto) {
+    return this.profesionalesService.darBaja(+id, dto.fecha_desde);
+  }
+
+  @Patch(':id/reactivar')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
+  reactivar(@Param('id') id: string) {
+    return this.profesionalesService.reactivar(+id);
   }
 
   @Delete(':id')

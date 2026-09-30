@@ -4,7 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import dayjs from 'src/common/date.util';
 import { Turno, TurnoStatus } from 'src/turnos/entities/turno.entity';
-import { Usuario } from 'src/usuarios/entities/usuario.entity';
 import { Between, Repository } from 'typeorm';
 import { WhatsappApiRequest } from './dto/whatsapp-api-request.dto';
 import {
@@ -24,8 +23,6 @@ export class WhatsappService {
     private readonly logRepository: Repository<WhatsappMessageLog>,
     @InjectRepository(Turno)
     private readonly turnoRepository: Repository<Turno>,
-    @InjectRepository(Usuario)
-    private readonly usuarioRepository: Repository<Usuario>,
   ) {}
 
   async sendTurnoConfirmation(turnoId: number) {
@@ -47,18 +44,16 @@ export class WhatsappService {
       return;
     }
 
-    const admins = await this.usuarioRepository.find({ where: { rol: 'ADMIN' } });
-    const phones = Array.from(new Set(admins.map((admin) => this.formatPhone(admin.telefono)).filter(Boolean)));
+    // Se conserva el nombre de plantilla y tipo de log por compatibilidad.
+    const phone = this.formatPhone(turno.profesional?.usuario?.telefono);
 
-    if (!phones.length) {
-      this.logger.warn('No hay usuarios ADMIN con telefono valido para WhatsApp');
+    if (!phone) {
+      this.logger.warn(`Turno ${turnoId} sin telefono valido del profesional para WhatsApp`);
       return;
     }
 
-    for (const phone of phones) {
-      const request = this.prepareAdminConfirmationMessage(turno, phone, templateName);
-      await this.sendAndLog(turno, WhatsappMessageType.ADMIN_CONFIRMACION, phone, templateName, request);
-    }
+    const request = this.prepareAdminConfirmationMessage(turno, phone, templateName);
+    await this.sendAndLog(turno, WhatsappMessageType.ADMIN_CONFIRMACION, phone, templateName, request);
   }
 
   @Cron('0 15 * * *', { timeZone: 'America/Argentina/Buenos_Aires' })

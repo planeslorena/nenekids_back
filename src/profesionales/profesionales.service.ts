@@ -1,8 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Servicio } from 'src/servicios/entities/servicio.entity';
 import { Usuario } from 'src/usuarios/entities/usuario.entity';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import dayjs, { nowArgentina } from '../common/date.util';
+import { Turno, TurnoStatus } from '../turnos/entities/turno.entity';
+import { admiteReserva, estadoActividad, fechaBajaLocal, resolverFechaBaja } from './actividad-profesional';
 import { CreateHorarioDto } from './dto/create-horario.dto';
 import { CreateProfesionalDto } from './dto/create-profesional.dto';
 import { HorarioDestacado } from './entities/horario-destacado.entity';
@@ -13,6 +16,7 @@ import { Profesional } from './entities/profesional.entity';
 @Injectable()
 export class ProfesionalesService {
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(Profesional)
     private readonly profesionalRepository: Repository<Profesional>,
     @InjectRepository(Horario)
@@ -32,7 +36,7 @@ export class ProfesionalesService {
       relations: ['usuario', 'horarios', 'horariosDestacados', 'profServicio', 'profServicio.servicio', 'profServicio.servicio.complementos_permitidos'],
       order: { id_profesional: 'ASC' },
     });
-    return profesionales.map((profesional) => ({
+    return profesionales.filter((p) => estadoActividad(p.baja_desde) !== 'INACTIVA').map((profesional) => ({
       id_profesional: profesional.id_profesional,
       nombre: profesional.usuario?.nombre || `Profesional ${profesional.id_profesional}`,
       foto_url: profesional.foto_url,
@@ -157,7 +161,9 @@ export class ProfesionalesService {
     if (dto.foto_pathname !== undefined) profesional.foto_pathname = dto.foto_pathname;
 
     await this.usuarioRepository.save(profesional.usuario);
-    await this.profesionalRepository.save(profesional);
+    await this.profesionalRepository.update(profesional.id_profesional, {
+      fecha_nacimiento: profesional.fecha_nacimiento, foto_url: profesional.foto_url, foto_pathname: profesional.foto_pathname,
+    });
 
     if (dto.servicios) {
       await this.profServicioRepository.delete({ profesional: { id_profesional: id } as any });
@@ -201,18 +207,81 @@ export class ProfesionalesService {
     if (dto.foto_pathname !== undefined) profesional.foto_pathname = dto.foto_pathname;
 
     await this.usuarioRepository.save(profesional.usuario);
-    await this.profesionalRepository.save(profesional);
+    await this.profesionalRepository.update(profesional.id_profesional, {
+      fecha_nacimiento: profesional.fecha_nacimiento, foto_url: profesional.foto_url, foto_pathname: profesional.foto_pathname,
+    });
 
     return this.findMe(userId);
   }
 
   async remove(id: number) {
-    const profesional = await this.profesionalRepository.findOne({ where: { id_profesional: id } });
-    if (!profesional) {
-      throw new NotFoundException('Profesional no encontrado');
+    return this.darBaja(id);
+  }
+
+  async requireProfesional(id: number, manager?: EntityManager) {
+    const profesional = await (manager ? manager.getRepository(Profesional) : this.profesionalRepository).findOne({
+      where: { id_profesional: id },
+      ...(manager ? { lock: { mode: 'pessimistic_write' as const } } : {}),
+    });
+    if (!profesional) throw new NotFoundException('Profesional no encontrado');
+    return profesional;
+  }
+
+  async validarReserva(id: number, fecha: string, hora: string, manager?: EntityManager) {
+    const profesional = await this.requireProfesional(id, manager);
+    if (!admiteReserva(profesional.baja_desde, fecha, hora)) {
+      throw new BadRequestException('La profesional esta dada de baja para la fecha seleccionada');
     }
-    await this.profesionalRepository.remove(profesional);
-    return { deleted: true };
+  }
+
+  async validarAcceso(userId: number) {
+    const profesional = await this.profesionalRepository.findOne({ where: { usuario: { id_usuario: userId } } });
+    if (!profesional || estadoActividad(profesional.baja_desde) === 'INACTIVA') {
+      throw new ForbiddenException('La profesional esta dada de baja');
+    }
+  }
+
+  private async calcularImpacto(id: number, baja: string, manager: EntityManager) {
+    const desde = [baja, nowArgentina().format('YYYY-MM-DDTHH:mm:ss')].sort().pop()!;
+    const turnos = await manager.getRepository(Turno).createQueryBuilder('turno')
+      .leftJoinAndSelect('turno.cliente', 'cliente')
+      .where('turno.id_profesional = :id', { id })
+      .andWhere('turno.estado != :cancelado', { cancelado: TurnoStatus.CANCELADO })
+      .andWhere('turno.fechaHora >= :desde', { desde: desde.replace('T', ' ') })
+      .orderBy('turno.fechaHora', 'ASC').getMany();
+    return {
+      cantidad: turnos.length,
+      turnos: turnos.map((t) => ({ id_turno: t.id_turno, fechaHora: dayjs(t.fechaHora).format('YYYY-MM-DDTHH:mm:ss'), nombre_cliente: t.cliente?.nombre || '', estado: t.estado })),
+    };
+  }
+
+  async impactoBaja(id: number, fecha?: string) {
+    await this.requireProfesional(id);
+    return this.calcularImpacto(id, resolverFechaBaja(fecha), this.dataSource.manager);
+  }
+
+  async darBaja(id: number, fecha?: string) {
+    const baja = resolverFechaBaja(fecha);
+    return this.dataSource.transaction(async (manager) => {
+      const profesional = await this.requireProfesional(id, manager);
+      const actual = fechaBajaLocal(profesional.baja_desde);
+      if (estadoActividad(profesional.baja_desde) === 'INACTIVA' && fecha !== undefined && baja !== actual) {
+        throw new BadRequestException('Reactiva la profesional antes de programar otra baja');
+      }
+      const efectiva = estadoActividad(profesional.baja_desde) === 'INACTIVA' ? actual! : baja;
+      // Partial update prevents unrelated profile edits from restoring an old status.
+      await manager.getRepository(Profesional).update(id, { baja_desde: dayjs(efectiva).toDate() });
+      const impacto = await this.calcularImpacto(id, efectiva, manager);
+      return { baja_desde: efectiva, estado_actividad: estadoActividad(efectiva), impacto };
+    });
+  }
+
+  async reactivar(id: number) {
+    return this.dataSource.transaction(async (manager) => {
+      await this.requireProfesional(id, manager);
+      await manager.getRepository(Profesional).update(id, { baja_desde: null });
+      return { baja_desde: null, estado_actividad: 'ACTIVA' as const };
+    });
   }
 
   async createHorario(createHorarioDto: CreateHorarioDto) {
@@ -268,6 +337,8 @@ export class ProfesionalesService {
   private mapAdmin(profesional: Profesional) {
     return {
       id_profesional: profesional.id_profesional,
+      baja_desde: fechaBajaLocal(profesional.baja_desde),
+      estado_actividad: estadoActividad(profesional.baja_desde),
       fecha_nacimiento: profesional.fecha_nacimiento,
       foto_url: profesional.foto_url,
       foto_pathname: profesional.foto_pathname,

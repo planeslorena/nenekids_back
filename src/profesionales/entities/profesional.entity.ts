@@ -7,6 +7,9 @@ import { HorarioDestacado } from './horario-destacado.entity';
 
 @Entity('profesionales')
 export class Profesional {
+    @Column({ type: 'datetime', nullable: true })
+    public baja_desde: Date | null;
+
     @PrimaryGeneratedColumn({
         type: 'int',
     })

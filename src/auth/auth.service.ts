@@ -1,3 +1,4 @@
+import { ProfesionalesService } from '../profesionales/profesionales.service';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -8,6 +9,7 @@ import { Repository } from 'typeorm';
 export class AuthService {
 
     constructor(
+        private readonly profesionalesService: ProfesionalesService,
         @InjectRepository(Usuario)
         private readonly usuarioRepository: Repository<Usuario>,
         private readonly jwtService: JwtService,
@@ -18,6 +20,8 @@ export class AuthService {
         if (!usuario) {
             throw new HttpException('Usuario no encontrado', HttpStatus.NOT_FOUND);
         }
+
+        if (usuario.rol === 'PROF') await this.profesionalesService.validarAcceso(usuario.id_usuario);
 
         // USER → entra directo
         if (usuario.rol === 'USER') {
