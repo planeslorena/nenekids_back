@@ -55,6 +55,15 @@ describe('Destinatarios de confirmacion de WhatsApp', () => {
       ['5491123456789', 'family_confirmation'],
       ['5492284594159', 'admin_confirmation'],
     ]);
+    const professionalParameters = requests[1].template.components[0].parameters;
+    expect(professionalParameters.map((parameter) => parameter.parameter_name)).toEqual([
+      'nino',
+      'turno',
+      'servicio',
+      'profesional',
+      'reserva',
+    ]);
+    expect(JSON.stringify(professionalParameters)).not.toContain('1123456789');
     expect(logs.find((log) => log.messageType === WhatsappMessageType.ADMIN_CONFIRMACION)
       ?.recipientPhone).toBe('5492284594159');
   });

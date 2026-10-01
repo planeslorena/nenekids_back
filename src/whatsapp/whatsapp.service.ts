@@ -217,7 +217,6 @@ export class WhatsappService {
 
   private prepareAdminConfirmationMessage(turno: Turno, recipientPhone: string, templateName: string): WhatsappApiRequest {
     const nino = turno.cliente?.nombre || 'Nene';
-    const telefono = turno.cliente?.adulto?.telefono?.toString() || 'Sin telefono';
     const servicio = this.getServicioLabel(turno);
     const profesional = turno.profesional?.usuario?.nombre || 'Profesional asignado';
     const fechaHora = dayjs(turno.fechaHora).format('DD/MM/YYYY HH:mm');
@@ -226,7 +225,6 @@ export class WhatsappService {
     return this.prepareTemplateRequest(recipientPhone, templateName, [
       { type: 'text', parameter_name: 'nino', text: nino },
       { type: 'text', parameter_name: 'turno', text: fechaHora },
-      { type: 'text', parameter_name: 'telefono', text: telefono },
       { type: 'text', parameter_name: 'servicio', text: servicio },
       { type: 'text', parameter_name: 'profesional', text: profesional },
       { type: 'text', parameter_name: 'reserva', text: reserva > 0 ? `$${reserva}` : 'Sin reserva' },
