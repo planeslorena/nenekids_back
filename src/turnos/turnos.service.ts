@@ -307,7 +307,7 @@ export class TurnosService {
     return this.turnoRepository.find({
       where: {
         cliente: { adulto: { id_usuario: userId } },
-        fechaHora: MoreThanOrEqual(dayjs().toDate()),
+        fechaHora: MoreThanOrEqual(nowArgentinaDateForDatabase()),
       },
       relations: ['cliente', 'profesional', 'profesional.usuario', 'servicio', 'servicios_adicionales'],
       order: { fechaHora: 'ASC' },
