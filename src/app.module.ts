@@ -14,6 +14,7 @@ import { BloqueosModule } from './bloqueos/bloqueos.module';
 import { PagosModule } from './pagos/pagos.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { CampaniasModule } from './campanias/campanias.module';
+import { FidelizacionModule } from './fidelizacion/fidelizacion.module';
 
 
 @Module({
@@ -40,7 +41,8 @@ import { CampaniasModule } from './campanias/campanias.module';
     BloqueosModule,
     PagosModule,
     WhatsappModule,
-    CampaniasModule
+    CampaniasModule,
+    FidelizacionModule
   ],
   controllers: [AppController],
   providers: [AppService],

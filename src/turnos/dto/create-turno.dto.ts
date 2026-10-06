@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateTurnoDto {
   @IsString()
@@ -24,4 +24,8 @@ export class CreateTurnoDto {
   @IsOptional()
   @IsString()
   observaciones?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  usar_beneficio_50?: boolean;
 }

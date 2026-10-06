@@ -24,6 +24,11 @@ export class CreateGrupoTurnoDto {
   ids_servicios_adicionales?: number[];
 
   @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  usar_beneficio_50_ids?: number[];
+
+  @IsOptional()
   @IsString()
   observaciones?: string;
 }

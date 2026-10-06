@@ -72,6 +72,9 @@ export class Servicio {
     })
     public visible_como_complemento: boolean;
 
+    @Column({ name: 'fidelizable', type: 'boolean', default: false })
+    public fidelizable: boolean;
+
     @Column({
         name: 'imagenes',
         type: 'simple-json',

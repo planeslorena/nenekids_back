@@ -22,6 +22,7 @@ export class ServiciosService {
       monto_reserva: createServicioDto.reserva ?? createServicioDto.monto_reserva ?? 0,
       visible: createServicioDto.visible_cliente ?? createServicioDto.visible ?? true,
       visible_como_complemento: createServicioDto.visible_como_complemento ?? false,
+      fidelizable: createServicioDto.fidelizable ?? false,
       imagenes: this.normalizeImagenes(createServicioDto.imagenes),
     });
     servicio.complementos_permitidos = await this.resolveComplementos(createServicioDto.complementos_permitidos_ids);
@@ -60,6 +61,7 @@ export class ServiciosService {
       monto_reserva: updateServicioDto.reserva ?? updateServicioDto.monto_reserva ?? servicio.monto_reserva,
       visible: updateServicioDto.visible_cliente ?? updateServicioDto.visible ?? servicio.visible,
       visible_como_complemento: updateServicioDto.visible_como_complemento ?? servicio.visible_como_complemento,
+      fidelizable: updateServicioDto.fidelizable ?? servicio.fidelizable,
       imagenes: updateServicioDto.imagenes === undefined ? servicio.imagenes : this.normalizeImagenes(updateServicioDto.imagenes),
     });
     if (updateServicioDto.complementos_permitidos_ids !== undefined) {

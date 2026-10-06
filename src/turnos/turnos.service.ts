@@ -1,5 +1,5 @@
 import { admiteReserva } from '../profesionales/actividad-profesional';
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Bloqueo, TipoBloqueo } from 'src/bloqueos/entities/bloqueo.entity';
@@ -17,8 +17,9 @@ import { CreateAdminTurnoDto } from './dto/create-admin-turno.dto';
 import { CreateGrupoTurnoDto } from './dto/create-grupo-turno.dto';
 import { CreateTurnoDto } from './dto/create-turno.dto';
 import { ConfiguracionDisponibilidad } from './entities/configuracion-disponibilidad.entity';
-import { PaymentStatus, Turno, TurnoStatus } from './entities/turno.entity';
+import { BeneficioFidelizacion, PaymentStatus, Turno, TurnoStatus } from './entities/turno.entity';
 import { randomUUID } from 'crypto';
+import { FidelizacionService } from 'src/fidelizacion/fidelizacion.service';
 
 type ServicioBundle = {
   principal: Servicio;
@@ -54,6 +55,7 @@ export class TurnosService {
     private readonly profesionalesService: ProfesionalesService,
     private readonly whatsappService: WhatsappService,
     private readonly dataSource: DataSource,
+    private readonly fidelizacionService: FidelizacionService,
   ) {}
 
   async create(dto: CreateTurnoDto, user: any) {
@@ -83,6 +85,7 @@ export class TurnosService {
       observaciones: dto.observaciones,
       reservaPagada: false,
       crearPago: true,
+      usarBeneficio50: dto.usar_beneficio_50,
     });
   }
 
@@ -109,14 +112,24 @@ export class TurnosService {
     const externalReference = `grupo:${randomUUID()}`;
     const horaInicial = this.toMinutes(dto.hora);
 
-    const turnosGuardados = await this.dataSource.transaction(async (manager) => {
+    let turnosGuardados: Turno[];
+    try {
+      turnosGuardados = await this.dataSource.transaction(async (manager) => {
       for (let index = 0; index < cantidad; index++) {
         await this.profesionalesService.validarReserva(dto.id_profesional, dto.fecha, this.toTime(horaInicial + bundle.duracionTotal * index), manager);
       }
       const turnoRepository = manager.getRepository(Turno);
-      const turnos = clientes.map((cliente, index) => {
+      const turnos: Turno[] = [];
+      for (let index = 0; index < clientes.length; index++) {
+        const cliente = clientes[index];
         const hora = this.toTime(horaInicial + bundle.duracionTotal * index);
-        return turnoRepository.create({
+        const fidelizacion = await this.fidelizacionService.prepararReserva(
+          cliente.id_cliente,
+          bundle.principal.fidelizable,
+          dto.usar_beneficio_50_ids ? dto.usar_beneficio_50_ids.includes(cliente.id_cliente) : undefined,
+          manager,
+        );
+        turnos.push(turnoRepository.create({
           dia: dto.fecha,
           hora,
           fechaHora: dayjs(`${dto.fecha} ${hora}`).toDate(),
@@ -133,11 +146,20 @@ export class TurnosService {
           profesional: { id_profesional: dto.id_profesional } as Profesional,
           servicio: bundle.principal,
           servicios_adicionales: bundle.adicionales,
-        });
-      });
+          fidelizacionElegible: fidelizacion.elegible,
+          fidelizacionPendienteClienteId: fidelizacion.pendienteClienteId,
+          fidelizacionBeneficio: fidelizacion.beneficio,
+        }));
+      }
 
-      return turnoRepository.save(turnos);
-    });
+        return turnoRepository.save(turnos);
+      });
+    } catch (error) {
+      if (String((error as any)?.driverError?.code) === 'ER_DUP_ENTRY') {
+        throw new ConflictException('Uno de los ninos ya tiene una reserva fidelizable pendiente de acreditacion');
+      }
+      throw error;
+    }
 
     if (!requierePago) {
       turnosGuardados.forEach((turno) => void this.whatsappService.sendTurnoConfirmation(turno.id_turno));
@@ -197,6 +219,7 @@ export class TurnosService {
       observaciones: dto.observaciones,
       reservaPagada: Boolean(dto.reserva_pagada),
       crearPago: false,
+      usarBeneficio50: dto.usar_beneficio_50,
     });
 
     return result.turno;
@@ -299,7 +322,6 @@ export class TurnosService {
       relations: ['cliente', 'cliente.adulto', 'profesional', 'profesional.usuario', 'servicio', 'servicios_adicionales'],
     });
     if (!turno) throw new NotFoundException('Turno no encontrado');
-
     if (user.rol === 'USER' && turno.cliente.adulto?.id_usuario !== user.sub) {
       throw new ForbiddenException('No podes consultar un turno ajeno');
     }
@@ -342,6 +364,8 @@ export class TurnosService {
       ...turno,
       estado: TurnoStatus.CANCELADO,
       paymentStatus: PaymentStatus.CANCELADO,
+      fidelizacionPendienteClienteId: null,
+      fidelizacionBeneficio: BeneficioFidelizacion.NINGUNO,
     }));
 
     await this.turnoRepository.save(cancelados);
@@ -544,13 +568,20 @@ export class TurnosService {
     if (user.rol === 'PROF' && turno.profesional.usuario?.id_usuario !== user.sub) {
       throw new ForbiddenException('No podes cancelar un turno de otro profesional');
     }
+    if (turno.estado === TurnoStatus.CANCELADO) return this.serializeTurno(turno);
     if (user.rol === 'USER' && dayjs(turno.fechaHora).diff(dayjs(), 'hour', true) < 24) {
       throw new BadRequestException('Los turnos solo se pueden cancelar con 24 hs de anticipacion');
     }
 
     turno.estado = TurnoStatus.CANCELADO;
     if (turno.paymentStatus === PaymentStatus.PENDIENTE) turno.paymentStatus = PaymentStatus.CANCELADO;
-    return this.turnoRepository.save(turno).then((saved) => this.serializeTurno(saved));
+    await this.turnoRepository.save(turno);
+    await this.fidelizacionService.cancelar(turno, user.sub);
+    const saved = await this.turnoRepository.findOne({
+      where: { id_turno: id },
+      relations: ['cliente', 'cliente.adulto', 'profesional', 'profesional.usuario', 'servicio', 'servicios_adicionales'],
+    });
+    return this.serializeTurno(saved!);
   }
 
   async updateReservaPagoAdmin(id: number, reservaPagada: boolean) {
@@ -606,6 +637,7 @@ export class TurnosService {
     observaciones,
     reservaPagada,
     crearPago,
+    usarBeneficio50,
   }: {
     cliente: Cliente;
     id_profesional: number;
@@ -615,6 +647,7 @@ export class TurnosService {
     observaciones?: string;
     reservaPagada: boolean;
     crearPago: boolean;
+    usarBeneficio50?: boolean;
   }) {
     const requierePago = bundle.reservaTotal > 0;
     const turno = this.turnoRepository.create({
@@ -636,10 +669,22 @@ export class TurnosService {
       servicios_adicionales: bundle.adicionales,
     });
 
-    const turnoGuardado = await this.dataSource.transaction(async (manager) => {
-      await this.profesionalesService.validarReserva(id_profesional, fecha, hora, manager);
-      return manager.getRepository(Turno).save(turno);
-    });
+    let turnoGuardado: Turno;
+    try {
+      turnoGuardado = await this.dataSource.transaction(async (manager) => {
+        await this.profesionalesService.validarReserva(id_profesional, fecha, hora, manager);
+        const fidelizacion = await this.fidelizacionService.prepararReserva(cliente.id_cliente, bundle.principal.fidelizable, usarBeneficio50, manager);
+        turno.fidelizacionElegible = fidelizacion.elegible;
+        turno.fidelizacionPendienteClienteId = fidelizacion.pendienteClienteId;
+        turno.fidelizacionBeneficio = fidelizacion.beneficio;
+        return manager.getRepository(Turno).save(turno);
+      });
+    } catch (error) {
+      if (String((error as any)?.driverError?.code) === 'ER_DUP_ENTRY') {
+        throw new ConflictException('El nino ya tiene una reserva fidelizable pendiente de acreditacion');
+      }
+      throw error;
+    }
 
     if (!requierePago || reservaPagada) {
       void this.whatsappService.sendTurnoConfirmation(turnoGuardado.id_turno);

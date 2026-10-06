@@ -13,6 +13,7 @@ import { PagosModule } from 'src/pagos/pagos.module';
 import { ProfesionalesModule } from 'src/profesionales/profesionales.module';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
 import { ConfiguracionDisponibilidad } from './entities/configuracion-disponibilidad.entity';
+import { FidelizacionModule } from 'src/fidelizacion/fidelizacion.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ConfiguracionDisponibilidad } from './entities/configuracion-disponibil
     PagosModule,
     ProfesionalesModule,
     WhatsappModule,
+    FidelizacionModule,
   ],
   controllers: [TurnosController],
   providers: [TurnosService],

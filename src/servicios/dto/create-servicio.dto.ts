@@ -57,6 +57,10 @@ export class CreateServicioDto {
   visible_como_complemento?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  fidelizable?: boolean;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ServicioImagenDto)

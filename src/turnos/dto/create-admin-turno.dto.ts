@@ -36,4 +36,8 @@ export class CreateAdminTurnoDto {
   @IsOptional()
   @IsBoolean()
   reserva_pagada?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  usar_beneficio_50?: boolean;
 }

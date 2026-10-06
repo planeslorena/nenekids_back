@@ -16,9 +16,16 @@ export enum PaymentStatus {
     CANCELADO = 'CANCELADO',
 }
 
+export enum BeneficioFidelizacion {
+    NINGUNO = 'NINGUNO',
+    DESCUENTO_50 = 'DESCUENTO_50',
+    CORTE_GRATIS = 'CORTE_GRATIS',
+}
+
 @Entity('turnos')
 @Index('IDX_turnos_estado_pago_vencimiento', ['paymentStatus', 'paymentExpiresAt'])
 @Index('IDX_turnos_profesional_fechaHora', ['profesional', 'fechaHora'])
+@Index('UQ_turnos_fidelizacion_pendiente_cliente', ['fidelizacionPendienteClienteId'], { unique: true })
 export class Turno {
     @PrimaryGeneratedColumn({
         type: 'int',
@@ -97,6 +104,21 @@ export class Turno {
         nullable: true,
     })
     public observaciones?: string;
+
+    @Column({ name: 'fidelizacion_elegible', type: 'boolean', default: false })
+    public fidelizacionElegible: boolean;
+
+    @Column({ name: 'fidelizacion_pendiente_cliente_id', type: 'int', nullable: true })
+    public fidelizacionPendienteClienteId?: number | null;
+
+    @Column({ name: 'fidelizacion_beneficio', type: 'enum', enum: BeneficioFidelizacion, default: BeneficioFidelizacion.NINGUNO })
+    public fidelizacionBeneficio: BeneficioFidelizacion;
+
+    @Column({ name: 'fidelizacion_beneficio_aplicado', type: 'boolean', default: false })
+    public fidelizacionBeneficioAplicado: boolean;
+
+    @Column({ name: 'fidelizacion_acreditado_at', type: 'datetime', nullable: true })
+    public fidelizacionAcreditadoAt?: Date | null;
 
     @CreateDateColumn()
     public createdAt: Date;

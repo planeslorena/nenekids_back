@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createHmac, timingSafeEqual } from 'crypto';
 import MercadoPagoConfig, { Payment, Preference } from 'mercadopago';
 import { Servicio } from 'src/servicios/entities/servicio.entity';
-import { PaymentStatus, Turno, TurnoStatus } from 'src/turnos/entities/turno.entity';
+import { BeneficioFidelizacion, PaymentStatus, Turno, TurnoStatus } from 'src/turnos/entities/turno.entity';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 import { Repository } from 'typeorm';
 
@@ -133,6 +133,8 @@ export class PagosService {
         if (['rejected', 'cancelled'].includes(data.status)) {
           turno.estado = TurnoStatus.CANCELADO;
           turno.paymentStatus = PaymentStatus.CANCELADO;
+          turno.fidelizacionPendienteClienteId = null;
+          turno.fidelizacionBeneficio = BeneficioFidelizacion.NINGUNO;
         }
         return turno;
       });
@@ -165,6 +167,8 @@ export class PagosService {
     if (['rejected', 'cancelled'].includes(data.status)) {
       turno.estado = TurnoStatus.CANCELADO;
       turno.paymentStatus = PaymentStatus.CANCELADO;
+      turno.fidelizacionPendienteClienteId = null;
+      turno.fidelizacionBeneficio = BeneficioFidelizacion.NINGUNO;
       return this.turnoRepository.save(turno);
     }
 
