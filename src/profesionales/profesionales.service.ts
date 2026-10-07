@@ -377,6 +377,7 @@ export class ProfesionalesService {
       precio_efectivo: servicio.precio,
       precio_transferencia: servicio.precio_transferencia ?? servicio.precio,
       reserva: servicio.monto_reserva,
+      fidelizable: servicio.fidelizable,
       visible_cliente: servicio.visible,
       visible_como_complemento: servicio.visible_como_complemento,
       imagenes: servicio.imagenes || [],

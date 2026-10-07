@@ -40,6 +40,22 @@ describe('consulta de tarjeta de fidelizacion', () => {
     expect(estado.cortes_hasta_proximo_beneficio).toBe(4);
     expect(estado.siguiente_beneficio).toBe(BeneficioFidelizacion.CORTE_GRATIS);
   });
+
+  it('respeta la eleccion de seguir acumulando mientras el quinto corte esta reservado', async () => {
+    const ciclo = { estado: EstadoCicloFidelizacion.ACTIVO, cantidadCortes: 4, renuncio50: false, fechaVencimiento: new Date(2099, 0, 1) };
+    const pendiente = { id_turno: 15, fechaHora: new Date(2098, 0, 1), fidelizacionBeneficio: BeneficioFidelizacion.NINGUNO, estado: TurnoStatus.CONFIRMADO };
+    const service = new FidelizacionService(
+      { findOne: async () => ({ id_cliente: 1, adulto: { id_usuario: 2 } }) } as any,
+      { findOne: jest.fn().mockResolvedValueOnce(pendiente).mockResolvedValueOnce(null) } as any,
+      { findOne: async () => ciclo } as any,
+      null as any, null as any,
+    );
+    const estado = await service.estado(1, { rol: 'USER', sub: 2 });
+    expect(estado.cortes).toBe(4);
+    expect(estado.siguiente_beneficio).toBe(BeneficioFidelizacion.CORTE_GRATIS);
+    expect(estado.cortes_hasta_proximo_beneficio).toBe(6);
+    expect(estado.proximo_beneficio).toBeNull();
+  });
 });
 
 describe('carga historica de fidelizacion', () => {

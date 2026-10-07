@@ -53,7 +53,8 @@ export class FidelizacionService {
     });
     const cicloVigente = ciclo && !cicloVencido(nowArgentinaDateForDatabase(), ciclo.fechaVencimiento) ? ciclo : null;
     const cortesVigentes = cicloVigente?.cantidadCortes || 0;
-    const haciaCorteGratis = Boolean(cicloVigente?.renuncio50) || cortesVigentes >= 5;
+    const eligioSeguirAcumulando = cortesVigentes === 4 && pendiente?.fidelizacionBeneficio === BeneficioFidelizacion.NINGUNO;
+    const haciaCorteGratis = Boolean(cicloVigente?.renuncio50) || cortesVigentes >= 5 || eligioSeguirAcumulando;
     return {
       id_cliente: idCliente,
       ciclo: cicloVigente || null,
@@ -61,7 +62,7 @@ export class FidelizacionService {
       cortes: cortesVigentes,
       siguiente_beneficio: haciaCorteGratis ? BeneficioFidelizacion.CORTE_GRATIS : BeneficioFidelizacion.DESCUENTO_50,
       cortes_hasta_proximo_beneficio: (haciaCorteGratis ? 10 : 5) - cortesVigentes,
-      proximo_beneficio: cicloVigente?.cantidadCortes === 4 ? 'ELECCION_50' : cicloVigente?.cantidadCortes === 9 ? 'CORTE_GRATIS' : null,
+      proximo_beneficio: cicloVigente?.cantidadCortes === 4 && !eligioSeguirAcumulando ? 'ELECCION_50' : cicloVigente?.cantidadCortes === 9 ? 'CORTE_GRATIS' : null,
       turno_pendiente: pendiente?.id_turno || null,
       detalle_turno_pendiente: pendiente ? { id_turno: pendiente.id_turno, fechaHora: pendiente.fechaHora, beneficio: pendiente.fidelizacionBeneficio, aplicado: pendiente.fidelizacionBeneficioAplicado, estado: pendiente.estado } : null,
       ultimo_beneficio_aplicado: ultimoBeneficio ? { id_turno: ultimoBeneficio.id_turno, fechaHora: ultimoBeneficio.fechaHora, beneficio: ultimoBeneficio.fidelizacionBeneficio } : null,
