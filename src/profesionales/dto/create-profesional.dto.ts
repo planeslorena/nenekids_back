@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsInt, IsOptional, IsString, Matches, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString, Matches, Max, Min, ValidateNested } from 'class-validator';
 
 class HorarioProfesionalDto {
   @IsInt()
@@ -45,6 +45,12 @@ export class CreateProfesionalDto {
 
   @IsString()
   fecha_nacimiento: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  porcentaje_comision?: number;
 
   @IsOptional()
   @IsString()

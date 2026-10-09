@@ -6,7 +6,13 @@ import { Column, CreateDateColumn, Entity, Index, JoinColumn, JoinTable, ManyToM
 export enum TurnoStatus {
     PENDIENTE_PAGO = 'PENDIENTE_PAGO',
     CONFIRMADO = 'CONFIRMADO',
+    ATENDIDO = 'ATENDIDO',
     CANCELADO = 'CANCELADO',
+}
+
+export enum MedioPagoTurno {
+    EFECTIVO = 'EFECTIVO',
+    TRANSFERENCIA = 'TRANSFERENCIA',
 }
 
 export enum PaymentStatus {
@@ -82,6 +88,12 @@ export class Turno {
 
     @Column({ name: 'precio_total', type: 'int', nullable: true })
     public precio_total?: number | null;
+
+    @Column({ name: 'importe_final', type: 'int', nullable: true })
+    public importe_final?: number | null;
+
+    @Column({ name: 'medio_pago', type: 'enum', enum: MedioPagoTurno, nullable: true })
+    public medioPago?: MedioPagoTurno | null;
 
     @Column({ name: 'monto_reserva_total', type: 'int', nullable: true })
     public monto_reserva_total?: number | null;

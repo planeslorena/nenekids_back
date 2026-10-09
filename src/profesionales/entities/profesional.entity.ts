@@ -22,6 +22,9 @@ export class Profesional {
     })
     public fecha_nacimiento: string;
 
+    @Column({ name: 'porcentaje_comision', type: 'int', default: 50 })
+    public porcentaje_comision: number;
+
     @Column({
         name: 'foto_url',
         length: 500,

@@ -6,6 +6,7 @@ import { CreateGrupoTurnoDto } from './dto/create-grupo-turno.dto';
 import { CreateTurnoDto } from './dto/create-turno.dto';
 import { UpdateConfiguracionDisponibilidadDto } from './dto/update-configuracion-disponibilidad.dto';
 import { UpdateReservaPagoDto } from './dto/update-reserva-pago.dto';
+import { UpdateAtencionTurnoDto } from './dto/update-atencion-turno.dto';
 import { TurnosService } from './turnos.service';
 
 @Controller('turnos')
@@ -113,6 +114,21 @@ export class TurnosController {
     });
   }
 
+  @Get('admin/resumen-diario')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
+  getResumenDiarioAdmin(
+    @Query('id_profesional') idProfesional: string,
+    @Query('fecha') fecha?: string,
+  ) {
+    return this.turnosService.getResumenDiarioAdmin(Number(idProfesional), fecha);
+  }
+
+  @Patch('admin/:id/atencion')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
+  registrarAtencionAdmin(@Param('id') id: string, @Body() dto: UpdateAtencionTurnoDto, @Req() req) {
+    return this.turnosService.registrarAtencion(+id, dto.medio_pago, req.user);
+  }
+
   @Get('configuracion-disponibilidad')
   @UseGuards(JwtAuthGuard, new RolesGuard(['ADMIN']))
   getConfiguracionDisponibilidad() {
@@ -157,6 +173,18 @@ export class TurnosController {
     @Query('hasta') hasta?: string,
   ) {
     return this.turnosService.findProfesional(req.user.sub, { desde, hasta });
+  }
+
+  @Get('profesional/resumen-diario')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['PROF']))
+  getResumenDiarioProfesional(@Req() req, @Query('fecha') fecha?: string) {
+    return this.turnosService.getResumenDiarioProfesional(req.user.sub, fecha);
+  }
+
+  @Patch('profesional/:id/atencion')
+  @UseGuards(JwtAuthGuard, new RolesGuard(['PROF']))
+  registrarAtencionProfesional(@Param('id') id: string, @Body() dto: UpdateAtencionTurnoDto, @Req() req) {
+    return this.turnosService.registrarAtencion(+id, dto.medio_pago, req.user);
   }
 
   @Post('profesional')

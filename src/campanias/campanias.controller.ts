@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/roles.guard';
 import { CampaniasService } from './campanias.service';
@@ -17,6 +27,11 @@ export class CampaniasController {
         ? ubicacion
         : CampaniaUbicacion.HOME,
     );
+  }
+
+  @Get('anuncios-activos')
+  findAnunciosActivos() {
+    return this.campaniasService.findAnunciosActivos();
   }
 
   @Get('admin')

@@ -17,7 +17,7 @@ import { CreateAdminTurnoDto } from './dto/create-admin-turno.dto';
 import { CreateGrupoTurnoDto } from './dto/create-grupo-turno.dto';
 import { CreateTurnoDto } from './dto/create-turno.dto';
 import { ConfiguracionDisponibilidad } from './entities/configuracion-disponibilidad.entity';
-import { BeneficioFidelizacion, PaymentStatus, Turno, TurnoStatus } from './entities/turno.entity';
+import { BeneficioFidelizacion, MedioPagoTurno, PaymentStatus, Turno, TurnoStatus } from './entities/turno.entity';
 import { randomUUID } from 'crypto';
 import { FidelizacionService } from 'src/fidelizacion/fidelizacion.service';
 
@@ -26,7 +26,6 @@ type ServicioBundle = {
   adicionales: Servicio[];
   servicios: Servicio[];
   duracionTotal: number;
-  precioTotal: number;
   reservaTotal: number;
 };
 
@@ -137,7 +136,6 @@ export class TurnosService {
           estado: requierePago ? TurnoStatus.PENDIENTE_PAGO : TurnoStatus.CONFIRMADO,
           paymentStatus: requierePago ? PaymentStatus.PENDIENTE : PaymentStatus.NO_REQUIERE,
           paymentAmount: requierePago ? bundle.reservaTotal : null,
-          precio_total: bundle.precioTotal,
           monto_reserva_total: bundle.reservaTotal,
           duracion_total: bundle.duracionTotal,
           paymentExpiresAt: requierePago ? dayjs().add(15, 'minute').toDate() : null,
@@ -376,6 +374,120 @@ export class TurnosService {
     return this.findAllAdmin({ ...params, id_profesional: idProfesional });
   }
 
+  async registrarAtencion(id: number, medioPago: MedioPagoTurno | undefined, user: any) {
+    const turno = await this.turnoRepository.findOne({
+      where: { id_turno: id },
+      relations: ['cliente', 'cliente.adulto', 'profesional', 'profesional.usuario', 'servicio', 'servicios_adicionales'],
+    });
+    if (!turno) throw new NotFoundException('Turno no encontrado');
+    if (user.rol === 'PROF' && turno.profesional.usuario?.id_usuario !== user.sub) {
+      throw new ForbiddenException('No podes registrar un turno de otro profesional');
+    }
+    if (turno.estado === TurnoStatus.CANCELADO || turno.estado === TurnoStatus.PENDIENTE_PAGO) {
+      throw new BadRequestException('El turno no esta confirmado');
+    }
+    if (dayjs(turno.fechaHora).isAfter(dayjs())) {
+      throw new BadRequestException('No se puede marcar como atendido un turno futuro');
+    }
+    const esGratuito = turno.fidelizacionBeneficio === BeneficioFidelizacion.CORTE_GRATIS;
+    if (!esGratuito && !medioPago) {
+      throw new BadRequestException('Debes indicar como se pago el servicio');
+    }
+
+    turno.medioPago = esGratuito ? null : medioPago!;
+    turno.importe_final = esGratuito ? 0 : this.calcularImporteFinal(turno, medioPago!);
+    turno.estado = TurnoStatus.ATENDIDO;
+    const saved = await this.turnoRepository.save(turno);
+    await this.fidelizacionService.acreditar(saved.id_turno);
+    return this.serializeTurno(saved);
+  }
+
+  async getResumenDiarioProfesional(userId: number, fecha?: string) {
+    const idProfesional = await this.profesionalesService.getIdByUsuario(userId);
+    return this.getResumenDiario(idProfesional, fecha);
+  }
+
+  async getResumenDiarioAdmin(idProfesional: number, fecha?: string) {
+    if (!idProfesional) throw new BadRequestException('Debes seleccionar un profesional');
+    return this.getResumenDiario(idProfesional, fecha);
+  }
+
+  private async getResumenDiario(idProfesional: number, fecha = dayjs().format('YYYY-MM-DD')) {
+    const profesional = await this.profesionalRepository.findOne({
+      where: { id_profesional: idProfesional },
+      relations: ['usuario'],
+    });
+    if (!profesional) throw new NotFoundException('Profesional no encontrado');
+
+    const turnos = await this.turnoRepository.find({
+      where: {
+        profesional: { id_profesional: idProfesional },
+        fechaHora: Between(dayjs(fecha).startOf('day').toDate(), dayjs(fecha).endOf('day').toDate()),
+        estado: In([TurnoStatus.CONFIRMADO, TurnoStatus.ATENDIDO]),
+      },
+      relations: ['servicio', 'servicios_adicionales'],
+    });
+
+    let totalDia = 0;
+    let totalEfectivo = 0;
+    let totalTransferencia = 0;
+    let totalSenias = 0;
+    let excedenteSenias = 0;
+    let totalSinClasificar = 0;
+    let cantidadSinClasificar = 0;
+    let cantidadTurnosSinMarcar = 0;
+    let cantidadAtendidosSinImporte = 0;
+
+    for (const turno of turnos) {
+      if (turno.estado === TurnoStatus.CONFIRMADO) {
+        if (!dayjs(turno.fechaHora).isAfter(dayjs())) cantidadTurnosSinMarcar += 1;
+        continue;
+      }
+      if (turno.importe_final == null) {
+        cantidadAtendidosSinImporte += 1;
+        continue;
+      }
+      const importe = Number(turno.importe_final);
+      const seniaAprobada = turno.paymentStatus === PaymentStatus.APROBADO && !turno.reservaRefundedAt
+        ? this.getReservaTotalTurno(turno)
+        : 0;
+      const saldo = Math.max(importe - Math.min(seniaAprobada, importe), 0);
+      totalDia += importe;
+      totalSenias += seniaAprobada;
+      excedenteSenias += Math.max(seniaAprobada - importe, 0);
+      if (turno.medioPago === MedioPagoTurno.EFECTIVO) totalEfectivo += saldo;
+      else if (turno.medioPago === MedioPagoTurno.TRANSFERENCIA) totalTransferencia += saldo;
+      else if (saldo > 0) {
+        totalSinClasificar += saldo;
+        cantidadSinClasificar += 1;
+      }
+    }
+
+    const porcentajeComision = Number(profesional.porcentaje_comision ?? 50);
+    const importeProfesional = Math.round(totalDia * porcentajeComision / 100);
+    const saldo = totalEfectivo - importeProfesional;
+    return {
+      fecha,
+      profesional: {
+        id_profesional: profesional.id_profesional,
+        nombre: profesional.usuario?.nombre || `Profesional ${profesional.id_profesional}`,
+        porcentaje_comision: porcentajeComision,
+      },
+      total_dia: totalDia,
+      total_efectivo: totalEfectivo,
+      total_transferencia: totalTransferencia,
+      total_senias: totalSenias,
+      excedente_senias: excedenteSenias,
+      total_sin_clasificar: totalSinClasificar,
+      cantidad_sin_clasificar: cantidadSinClasificar,
+      cantidad_turnos_sin_marcar: cantidadTurnosSinMarcar,
+      cantidad_atendidos_sin_importe: cantidadAtendidosSinImporte,
+      importe_profesional: importeProfesional,
+      saldo,
+      sentido: saldo > 0 ? 'PROFESIONAL_ENTREGA' : saldo < 0 ? 'ADMINISTRACION_PAGA' : 'SALDADO',
+    };
+  }
+
   async getHorariosDisponibles(idProfesional: number, idServicio: number, fecha: string, cantidad = 1, idsServiciosAdicionales: number[] = []) {
     const disponibles = await this.getHorariosDisponiblesCompletos(idProfesional, idServicio, fecha, cantidad, idsServiciosAdicionales);
     return this.aplicarDisponibilidadPublica(idProfesional, fecha, disponibles);
@@ -568,7 +680,10 @@ export class TurnosService {
     if (user.rol === 'PROF' && turno.profesional.usuario?.id_usuario !== user.sub) {
       throw new ForbiddenException('No podes cancelar un turno de otro profesional');
     }
-    if (turno.estado === TurnoStatus.CANCELADO) return this.serializeTurno(turno);
+    if (turno.estado === TurnoStatus.CANCELADO) {
+      if (turno.fidelizacionPendienteClienteId) await this.fidelizacionService.cancelar(turno, user.sub);
+      return this.serializeTurno(turno);
+    }
     if (user.rol === 'USER' && dayjs(turno.fechaHora).diff(dayjs(), 'hour', true) < 24) {
       throw new BadRequestException('Los turnos solo se pueden cancelar con 24 hs de anticipacion');
     }
@@ -658,7 +773,6 @@ export class TurnosService {
       estado: requierePago && !reservaPagada ? TurnoStatus.PENDIENTE_PAGO : TurnoStatus.CONFIRMADO,
       paymentStatus: !requierePago ? PaymentStatus.NO_REQUIERE : reservaPagada ? PaymentStatus.APROBADO : PaymentStatus.PENDIENTE,
       paymentAmount: requierePago ? bundle.reservaTotal : null,
-      precio_total: bundle.precioTotal,
       monto_reserva_total: bundle.reservaTotal,
       duracion_total: bundle.duracionTotal,
       paidAt: requierePago && reservaPagada ? new Date() : null,
@@ -804,7 +918,6 @@ export class TurnosService {
       adicionales: servicios.slice(1),
       servicios,
       duracionTotal: servicios.reduce((total, servicio) => total + Number(servicio.duracion || 0), 0),
-      precioTotal: servicios.reduce((total, servicio) => total + Number(servicio.precio || 0), 0),
       reservaTotal: servicios.reduce((total, servicio) => total + Number(servicio.monto_reserva || 0), 0),
     };
   }
@@ -829,7 +942,26 @@ export class TurnosService {
 
   private getPrecioTotalTurno(turno: Turno) {
     const adicionales = (turno.servicios_adicionales || []).reduce((total, servicio) => total + Number(servicio.precio || 0), 0);
-    return Number(turno.precio_total ?? (Number(turno.servicio?.precio || 0) + adicionales));
+    return Number(turno.servicio?.precio || 0) + adicionales;
+  }
+
+  private calcularImporteFinal(turno: Turno, medioPago: MedioPagoTurno) {
+    const adicionales = turno.servicios_adicionales || [];
+    const total = medioPago === MedioPagoTurno.TRANSFERENCIA
+      ? Number(turno.servicio?.precio_transferencia ?? turno.servicio?.precio ?? 0)
+        + adicionales.reduce((suma, servicio) => suma + Number(servicio.precio_transferencia ?? servicio.precio ?? 0), 0)
+      : this.getPrecioTotalTurno(turno);
+    const precioPrincipal = medioPago === MedioPagoTurno.TRANSFERENCIA
+      ? Number(turno.servicio?.precio_transferencia ?? turno.servicio?.precio ?? 0)
+      : Number(turno.servicio?.precio ?? 0);
+
+    if (turno.fidelizacionBeneficio === BeneficioFidelizacion.CORTE_GRATIS) {
+      return 0;
+    }
+    if (turno.fidelizacionBeneficio === BeneficioFidelizacion.DESCUENTO_50) {
+      return Math.max(total - Math.round(precioPrincipal / 2), 0);
+    }
+    return total;
   }
 
   private getDuracionTotalTurno(turno: Turno) {
@@ -944,7 +1076,9 @@ export class TurnosService {
       hora,
       estado_pago: turno.paymentStatus,
       reservaRefundedAt: turno.reservaRefundedAt ? formatLocalDateTime(turno.reservaRefundedAt) : null,
-      precio_total: this.getPrecioTotalTurno(turno),
+      precio_actual: this.getPrecioTotalTurno(turno),
+      importe_final: turno.importe_final,
+      medio_pago: turno.medioPago || null,
       monto_reserva_total: this.getReservaTotalTurno(turno),
       duracion_total: this.getDuracionTotalTurno(turno),
       cliente: turno.cliente ? {

@@ -114,6 +114,7 @@ export class ProfesionalesService {
     const profesional = await this.profesionalRepository.save(
       this.profesionalRepository.create({
         fecha_nacimiento: createProfesionalDto.fecha_nacimiento,
+        porcentaje_comision: createProfesionalDto.porcentaje_comision ?? 50,
         foto_url: createProfesionalDto.foto_url,
         foto_pathname: createProfesionalDto.foto_pathname,
         usuario,
@@ -157,12 +158,13 @@ export class ProfesionalesService {
     if (dto.telefono !== undefined) profesional.usuario.telefono = dto.telefono;
     if (dto.codigo !== undefined) profesional.usuario.codigo = dto.codigo;
     if (dto.fecha_nacimiento !== undefined) profesional.fecha_nacimiento = dto.fecha_nacimiento;
+    if (dto.porcentaje_comision !== undefined) profesional.porcentaje_comision = dto.porcentaje_comision;
     if (dto.foto_url !== undefined) profesional.foto_url = dto.foto_url;
     if (dto.foto_pathname !== undefined) profesional.foto_pathname = dto.foto_pathname;
 
     await this.usuarioRepository.save(profesional.usuario);
     await this.profesionalRepository.update(profesional.id_profesional, {
-      fecha_nacimiento: profesional.fecha_nacimiento, foto_url: profesional.foto_url, foto_pathname: profesional.foto_pathname,
+      fecha_nacimiento: profesional.fecha_nacimiento, porcentaje_comision: profesional.porcentaje_comision, foto_url: profesional.foto_url, foto_pathname: profesional.foto_pathname,
     });
 
     if (dto.servicios) {
@@ -340,6 +342,7 @@ export class ProfesionalesService {
       baja_desde: fechaBajaLocal(profesional.baja_desde),
       estado_actividad: estadoActividad(profesional.baja_desde),
       fecha_nacimiento: profesional.fecha_nacimiento,
+      porcentaje_comision: profesional.porcentaje_comision,
       foto_url: profesional.foto_url,
       foto_pathname: profesional.foto_pathname,
       usuario: profesional.usuario,

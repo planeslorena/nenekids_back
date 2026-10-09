@@ -26,6 +26,13 @@ describe('consulta de tarjeta de fidelizacion', () => {
     expect(estado.turno_pendiente).toBe(15);
     expect(estado.detalle_turno_pendiente?.beneficio).toBe(BeneficioFidelizacion.DESCUENTO_50);
     expect(estado.ultimo_beneficio_aplicado?.beneficio).toBe(BeneficioFidelizacion.CORTE_GRATIS);
+    const filtroPendiente = (turnos.findOne as jest.Mock).mock.calls[0][0].where;
+    expect(filtroPendiente.fidelizacionPendienteClienteId).toBe(1);
+    expect(filtroPendiente.estado.value).toEqual([
+      TurnoStatus.PENDIENTE_PAGO,
+      TurnoStatus.CONFIRMADO,
+      TurnoStatus.ATENDIDO,
+    ]);
   });
 
   it('indica cuantos cortes faltan para el gratis cuando se renuncio al 50%', async () => {
@@ -55,6 +62,98 @@ describe('consulta de tarjeta de fidelizacion', () => {
     expect(estado.siguiente_beneficio).toBe(BeneficioFidelizacion.CORTE_GRATIS);
     expect(estado.cortes_hasta_proximo_beneficio).toBe(6);
     expect(estado.proximo_beneficio).toBeNull();
+  });
+});
+
+describe('acreditacion automatica de fidelizacion', () => {
+  it('procesa turnos confirmados o atendidos cuya fecha y hora ya pasaron', async () => {
+    const turnos = {
+      find: jest.fn().mockResolvedValue([{ id_turno: 10 }, { id_turno: 11 }]),
+    };
+    const service = new FidelizacionService(null as any, turnos as any, null as any, null as any, null as any);
+    const acreditar = jest.spyOn(service, 'acreditar').mockResolvedValue(true);
+
+    await expect(service.acreditarPendientes()).resolves.toEqual({ procesados: 2 });
+    expect(acreditar).toHaveBeenNthCalledWith(1, 10);
+    expect(acreditar).toHaveBeenNthCalledWith(2, 11);
+    const filtro = turnos.find.mock.calls[0][0].where;
+    expect(filtro.estado.value).toEqual([TurnoStatus.CONFIRMADO, TurnoStatus.ATENDIDO]);
+  });
+});
+
+describe('preparacion de reserva fidelizable', () => {
+  it('limpia una marca pendiente residual de un turno cancelado antes de reservar', async () => {
+    const update = jest.fn().mockResolvedValue({ affected: 1 });
+    const manager = {
+      getRepository: (entity: unknown) => {
+        if (entity === Cliente) return {
+          createQueryBuilder: () => ({
+            setLock() { return this; },
+            where() { return this; },
+            getOneOrFail: async () => ({ id_cliente: 1 }),
+          }),
+        };
+        if (entity === Turno) return { update };
+        return { findOne: async () => null };
+      },
+    };
+    const service = new FidelizacionService(null as any, null as any, null as any, null as any, null as any);
+
+    await expect(service.prepararReserva(1, true, undefined, manager as any)).resolves.toEqual({
+      elegible: true,
+      pendienteClienteId: 1,
+      beneficio: BeneficioFidelizacion.NINGUNO,
+    });
+    expect(update).toHaveBeenCalledWith(
+      { fidelizacionPendienteClienteId: 1, estado: TurnoStatus.CANCELADO },
+      { fidelizacionPendienteClienteId: null, fidelizacionBeneficio: BeneficioFidelizacion.NINGUNO },
+    );
+  });
+});
+
+describe('cancelacion de cortes acreditados', () => {
+  it('reabre con nueve cortes el ciclo cerrado por un decimo corte gratis cancelado', async () => {
+    const cliente = { id_cliente: 1 } as Cliente;
+    const turno = {
+      id_turno: 10,
+      cliente,
+      estado: TurnoStatus.CANCELADO,
+      fechaHora: new Date(2026, 9, 8, 10),
+      fidelizacionElegible: true,
+      fidelizacionAcreditadoAt: new Date(2026, 9, 8, 10, 30),
+      fidelizacionBeneficio: BeneficioFidelizacion.CORTE_GRATIS,
+      fidelizacionBeneficioAplicado: true,
+      fidelizacionPendienteClienteId: null,
+    } as Turno;
+    const ciclo = {
+      id: 4,
+      cliente,
+      cantidadCortes: 10,
+      estado: EstadoCicloFidelizacion.CERRADO_GRATIS,
+      fechaCierre: turno.fechaHora,
+      renuncio50: true,
+    } as CicloFidelizacion;
+    const turnoRepo = { exists: jest.fn().mockResolvedValue(false) };
+    const movimientoRepo = { findOne: jest.fn().mockResolvedValue({ ciclo }) };
+    const saved: unknown[] = [];
+    const manager = {
+      getRepository: (entity: unknown) => entity === Turno ? turnoRepo : movimientoRepo,
+      create: (entity: unknown, data: object) => Object.assign(Object.create((entity as Function).prototype), data),
+      save: async (entity: unknown, value?: unknown) => { const item = value || entity; saved.push(item); return item; },
+    };
+    const dataSource = { transaction: async (callback: (manager: unknown) => Promise<unknown>) => callback(manager) };
+    const service = new FidelizacionService(null as any, null as any, null as any, null as any, dataSource as any);
+
+    await service.cancelar(turno, 20);
+
+    expect(ciclo.cantidadCortes).toBe(9);
+    expect(ciclo.estado).toBe(EstadoCicloFidelizacion.ACTIVO);
+    expect(ciclo.fechaCierre).toBeNull();
+    expect(ciclo.renuncio50).toBe(true);
+    expect(turno.fidelizacionAcreditadoAt).toBeNull();
+    expect(turno.fidelizacionBeneficioAplicado).toBe(false);
+    expect(turno.fidelizacionBeneficio).toBe(BeneficioFidelizacion.NINGUNO);
+    expect(saved).toContain(ciclo);
   });
 });
 

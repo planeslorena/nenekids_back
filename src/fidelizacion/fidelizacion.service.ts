@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Cliente } from 'src/clientes/entities/cliente.entity';
 import dayjs, { nowArgentinaDateForDatabase } from 'src/common/date.util';
 import { BeneficioFidelizacion, Turno, TurnoStatus } from 'src/turnos/entities/turno.entity';
-import { DataSource, EntityManager, IsNull, LessThanOrEqual, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, LessThanOrEqual, MoreThan, Not, Repository } from 'typeorm';
 import { CicloFidelizacion, EstadoCicloFidelizacion } from './entities/ciclo-fidelizacion.entity';
 import { MovimientoFidelizacion, TipoMovimientoFidelizacion } from './entities/movimiento-fidelizacion.entity';
 import { cicloVencido, estadoAlDecimoCorte, resolverBeneficioReserva } from './fidelizacion.policy';
@@ -25,7 +25,12 @@ export class FidelizacionService {
       await manager.getRepository(Cliente).createQueryBuilder('cliente').setLock('pessimistic_write')
         .where('cliente.id_cliente = :idCliente', { idCliente }).getOneOrFail();
     }
-    const repo = (manager || this.dataSource.manager).getRepository(CicloFidelizacion);
+    const entityManager = manager || this.dataSource.manager;
+    await entityManager.getRepository(Turno).update(
+      { fidelizacionPendienteClienteId: idCliente, estado: TurnoStatus.CANCELADO },
+      { fidelizacionPendienteClienteId: null, fidelizacionBeneficio: BeneficioFidelizacion.NINGUNO },
+    );
+    const repo = entityManager.getRepository(CicloFidelizacion);
     const ciclo = await repo.findOne({ where: { cliente: { id_cliente: idCliente }, estado: EstadoCicloFidelizacion.ACTIVO }, order: { fechaInicio: 'DESC' } });
     const cortes = ciclo?.cantidadCortes || 0;
     return {
@@ -46,9 +51,15 @@ export class FidelizacionService {
     }
     const ciclo = await this.ciclos.findOne({ where: { cliente: { id_cliente: idCliente }, estado: EstadoCicloFidelizacion.ACTIVO }, order: { fechaInicio: 'DESC' } });
     const ultimoCiclo = await this.ciclos.findOne({ where: { cliente: { id_cliente: idCliente } }, order: { fechaInicio: 'DESC', id: 'DESC' } });
-    const pendiente = await this.turnos.findOne({ where: { fidelizacionPendienteClienteId: idCliente }, order: { fechaHora: 'ASC' } });
+    const pendiente = await this.turnos.findOne({
+      where: {
+        fidelizacionPendienteClienteId: idCliente,
+        estado: In([TurnoStatus.PENDIENTE_PAGO, TurnoStatus.CONFIRMADO, TurnoStatus.ATENDIDO]),
+      },
+      order: { fechaHora: 'ASC' },
+    });
     const ultimoBeneficio = await this.turnos.findOne({
-      where: { cliente: { id_cliente: idCliente }, estado: TurnoStatus.CONFIRMADO, fidelizacionBeneficioAplicado: true },
+      where: { cliente: { id_cliente: idCliente }, estado: In([TurnoStatus.CONFIRMADO, TurnoStatus.ATENDIDO]), fidelizacionBeneficioAplicado: true },
       order: { fechaHora: 'DESC', id_turno: 'DESC' },
     });
     const cicloVigente = ciclo && !cicloVencido(nowArgentinaDateForDatabase(), ciclo.fechaVencimiento) ? ciclo : null;
@@ -73,7 +84,7 @@ export class FidelizacionService {
   async acreditarPendientes() {
     const ids = (await this.turnos.find({
       select: { id_turno: true },
-      where: { estado: TurnoStatus.CONFIRMADO, fidelizacionElegible: true, fidelizacionAcreditadoAt: IsNull(), fechaHora: LessThanOrEqual(nowArgentinaDateForDatabase()) },
+      where: { estado: In([TurnoStatus.CONFIRMADO, TurnoStatus.ATENDIDO]), fidelizacionElegible: true, fidelizacionAcreditadoAt: IsNull(), fechaHora: LessThanOrEqual(nowArgentinaDateForDatabase()) },
       order: { fechaHora: 'ASC', id_turno: 'ASC' }, take: 200,
     })).map((t) => t.id_turno);
     for (const id of ids) await this.acreditar(id);
@@ -85,7 +96,7 @@ export class FidelizacionService {
       const turnoRepo = manager.getRepository(Turno);
       const turno = await turnoRepo.createQueryBuilder('t').setLock('pessimistic_write').leftJoinAndSelect('t.cliente', 'cliente')
         .where('t.id_turno = :id', { id: idTurno }).getOne();
-      if (!turno || turno.fidelizacionAcreditadoAt || !turno.fidelizacionElegible || turno.estado !== TurnoStatus.CONFIRMADO || dayjs(turno.fechaHora).isAfter(dayjs())) return false;
+      if (!turno || turno.fidelizacionAcreditadoAt || !turno.fidelizacionElegible || ![TurnoStatus.CONFIRMADO, TurnoStatus.ATENDIDO].includes(turno.estado) || dayjs(turno.fechaHora).isAfter(dayjs())) return false;
       await manager.getRepository(Cliente).createQueryBuilder('cliente').setLock('pessimistic_write')
         .where('cliente.id_cliente = :idCliente', { idCliente: turno.cliente.id_cliente }).getOneOrFail();
       let ciclo = await manager.getRepository(CicloFidelizacion).findOne({ where: { cliente: { id_cliente: turno.cliente.id_cliente }, estado: EstadoCicloFidelizacion.ACTIVO }, order: { fechaInicio: 'DESC' } });
@@ -134,13 +145,53 @@ export class FidelizacionService {
     }
     await this.dataSource.transaction(async (manager) => {
       await manager.save(turno);
-      await manager.save(MovimientoFidelizacion, manager.create(MovimientoFidelizacion, { cliente: turno.cliente, turno, tipo: TipoMovimientoFidelizacion.REVERSA, actorId, detalle: 'Cancelacion de corte acreditado; ciclos reconstruidos' }));
+      await manager.save(MovimientoFidelizacion, manager.create(MovimientoFidelizacion, { cliente: turno.cliente, turno, tipo: TipoMovimientoFidelizacion.REVERSA, actorId, detalle: 'Cancelacion de corte acreditado; progreso de fidelizacion revertido' }));
+      if (await this.revertirUltimoCorte(turno, manager)) return;
       await this.reconstruir(turno.cliente.id_cliente, manager);
     });
   }
 
+  private async revertirUltimoCorte(turno: Turno, manager: EntityManager) {
+    const hayAcreditadosPosteriores = await manager.getRepository(Turno).exists({
+      where: {
+        cliente: { id_cliente: turno.cliente.id_cliente },
+        estado: In([TurnoStatus.CONFIRMADO, TurnoStatus.ATENDIDO]),
+        fidelizacionElegible: true,
+        fidelizacionAcreditadoAt: Not(IsNull()),
+        fechaHora: MoreThan(turno.fechaHora),
+      },
+    });
+    if (hayAcreditadosPosteriores) return false;
+
+    const movimiento = await manager.getRepository(MovimientoFidelizacion).findOne({
+      where: {
+        turno: { id_turno: turno.id_turno },
+        tipo: In([
+          TipoMovimientoFidelizacion.ACREDITACION,
+          TipoMovimientoFidelizacion.REASIGNACION,
+          TipoMovimientoFidelizacion.CARGA_HISTORICA,
+        ]),
+      },
+      relations: ['ciclo'],
+      order: { createdAt: 'DESC', id: 'DESC' },
+    });
+    if (!movimiento?.ciclo) return false;
+
+    const ciclo = movimiento.ciclo;
+    ciclo.cantidadCortes = Math.max(0, ciclo.cantidadCortes - 1);
+    ciclo.estado = EstadoCicloFidelizacion.ACTIVO;
+    ciclo.fechaCierre = null;
+    ciclo.renuncio50 = ciclo.cantidadCortes >= 5;
+    turno.fidelizacionAcreditadoAt = null;
+    turno.fidelizacionBeneficioAplicado = false;
+    turno.fidelizacionBeneficio = BeneficioFidelizacion.NINGUNO;
+    await manager.save(ciclo);
+    await manager.save(turno);
+    return true;
+  }
+
   private async reconstruir(idCliente: number, manager: EntityManager) {
-    const turnos = await manager.getRepository(Turno).find({ where: { cliente: { id_cliente: idCliente }, estado: TurnoStatus.CONFIRMADO, fidelizacionElegible: true }, order: { fechaHora: 'ASC', id_turno: 'ASC' }, relations: ['cliente'] });
+    const turnos = await manager.getRepository(Turno).find({ where: { cliente: { id_cliente: idCliente }, estado: In([TurnoStatus.CONFIRMADO, TurnoStatus.ATENDIDO]), fidelizacionElegible: true }, order: { fechaHora: 'ASC', id_turno: 'ASC' }, relations: ['cliente'] });
     await manager.getRepository(MovimientoFidelizacion).createQueryBuilder().delete().where('id_cliente = :id AND tipo != :reversa', { id: idCliente, reversa: TipoMovimientoFidelizacion.REVERSA }).execute();
     await manager.getRepository(CicloFidelizacion).createQueryBuilder().delete().where('id_cliente = :id', { id: idCliente }).execute();
     await manager.getRepository(Turno).createQueryBuilder().update().set({ fidelizacionAcreditadoAt: null, fidelizacionBeneficioAplicado: false }).where('id_cliente = :id', { id: idCliente }).execute();
